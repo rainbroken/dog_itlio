@@ -1,0 +1,11 @@
+---
+bool success
+string sdk_version
+bool robot_version_supported
+uint16 robot_major
+uint16 robot_minor
+uint16 robot_patch
+uint32 robot_commit
+uint32 robot_build_date
+uint32 robot_build_time
+string message

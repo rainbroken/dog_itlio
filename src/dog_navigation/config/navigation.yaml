@@ -1,0 +1,42 @@
+# 实时三维避障与重规划。由 bringup.yaml 的 navigation_config 选择，修改后重启生效。
+# 长度单位 m、时间单位 s；当前输出路径及停车请求，未包含速度执行后端。
+local_navigation:
+  ros__parameters:
+    # —— 坐标系与话题 ——
+    map_frame: map
+    odom_frame: odom
+    base_frame: base_link
+    sensor_frame: livox_frame
+    cloud_topic: /lio/cloud_deskewed
+    localization_topic: /map_localizer/status
+    goal_topic: /goal_pose
+    # —— 更新频率与有效性门控 ——
+    planning_rate: 5.0           # 规划频率上限，Hz
+    data_timeout: 0.6            # 扫描有效期
+    localization_timeout: 0.8    # 定位状态有效期
+    tf_timeout: 0.4              # TF 有效期
+    processing_budget: 0.4       # 单次处理预算
+
+    # —— 机身与地面关系 ——
+    # base_link 到名义接地位置的机身坐标系偏移量大小，按实际站姿校准。
+    base_ground_offset: 0.65
+
+    # —— 实时点云与体素障碍层 ——
+    voxel: 0.10                 # 体素分辨率
+    range: 8.0                  # 射线最大距离与障碍记忆的水平保留范围
+    vertical_range: 4.0         # 垂直处理范围，保留多层高度信息
+    min_range: 0.4              # 雷达近场过滤距离
+    padding: 0.12               # 动态障碍额外间隙
+    obstacle_bottom: 0.12       # 地表之上的障碍判定高度
+    static_tolerance: 0.08      # 实时点与静态地图对应的距离容差
+
+    # —— 避障代价与局部路径 ——
+    avoidance_distance: 0.45     # 障碍附近的代价影响距离
+    avoidance_weight: 8.0       # 障碍接近代价权重
+    local_length: 3.0           # 局部路径截取长度
+
+    # —— 资源上限与里程计连续性 ——
+    max_rays: 20000             # 单帧射线数量上限
+    max_voxels: 120000          # 障碍体素数量上限
+    odom_jump_tolerance: 0.3     # 位移跳变判断的额外容差
+    max_odom_speed: 3.0          # 连续性检查允许的最大速度，m/s

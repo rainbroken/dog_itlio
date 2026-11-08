@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>IteraLIO · 机器人工作台</title>
+  <base href="/console/">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="layout.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237bad88'/%3E%3Cpath d='M8 8h16v4H12v4h10v4H12v4H8z' fill='%23131d18'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="localization.css">
+  <link rel="stylesheet" href="robot_model.css">
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="map_library.css">
+  <link rel="stylesheet" href="workspace_modes.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="index.html"><span class="brand-mark">I<span>↗</span></span><div>IteraLIO<small>ROBOTICS CONSOLE</small></div></a>
+    <div class="robot-card"><span class="robot-avatar">R</span><div><strong>四足机器人 · 01</strong><small>BPX / ROS 2 Humble</small></div><i class="dot green"></i></div>
+    <div class="nav-caption">工作空间 <small>WORKSPACE</small></div>
+    <nav aria-label="主导航">
+      <button class="active" data-page="overview"><span>◈</span>三维工作台 <small>01</small></button>
+      <button data-page="mapping"><span>⌁</span>SLAM 建图 <small>02</small></button>
+      <button data-page="maps"><span>▧</span>地图管理 <small>03</small></button>
+      <button data-page="navigation"><span>⌖</span>定位与导航 <small>04</small></button>
+      <button data-page="terrain"><span>▱</span>地形与通行 <small>05</small></button>
+      <div class="nav-divider"></div>
+      <button data-page="diagnostics"><span>◉</span>设备与诊断</button>
+      <button data-page="settings"><span>⚙</span>参数设置</button>
+    </nav>
+    <div class="sidebar-note"><span class="mini-label">CURRENT PROJECT</span><strong>园区 A · 多层环境</strong><span>building_a / revision 08</span><div class="tiny-progress"><i></i></div><small>几何地图 · Z 轴向上 · 单位 m</small></div>
+    <div class="sidebar-bottom"><i class="dot amber"></i>本地设计原型<span>v0.1</span></div>
+  </aside>
+  <div class="app">
+    <header class="topbar">
+      <div class="topbar-left"><span class="connection"><i class="dot green"></i>机器人状态正常 <em>演示</em></span><span class="top-separator"></span><span>控制权 <b id="controlOwner">未占用</b></span><span class="posture">姿态 <b>站立</b> / 行走</span></div>
+      <section class="motion-telemetry" aria-label="运动与姿态遥测" title="等待新鲜遥测"><div class="velocity-values"><div><small>线速度</small><strong>—</strong></div><div><small>角速度</small><strong>—</strong></div></div><div class="attitude"><span>Roll <b>—</b></span><span>Pitch <b>—</b></span><span>Yaw <b>—</b></span></div></section>
+      <div class="topbar-right"><div class="posture-actions" aria-label="机器人姿态控制"><button class="button" id="headerStand" data-motion="0" disabled>站起</button><button class="button" id="headerLie" data-motion="1" disabled>趴下</button></div><span class="battery"><span class="battery-icon">▰▰▰</span> 76<span>%</span></span><span class="demo-tag">模拟数据 · 未连接 ROS</span><button id="showEvents" class="button" aria-expanded="false" aria-controls="events">☷ 事件 <span class="counter" id="eventCount">3</span></button><time id="clock">--:--:--</time></div>
+      <section class="health-strip" aria-label="组件状态">
+        <button data-health="control"><i class="dot amber"></i><span>控制通道<small>未接入</small></span><b>—</b></button>
+        <button data-health="lidar"><i class="dot green"></i><span>LiDAR<small>MID-360</small></span><b>10 <em>Hz</em></b></button>
+        <button data-health="imu"><i class="dot green"></i><span>雷达 IMU<small>数据正常</small></span><b>200 <em>Hz</em></b></button>
+        <button data-health="lio"><i class="dot green"></i><span>IteraLIO<small>运行中</small></span><b>10 <em>Hz</em></b></button>
+        <button data-health="tf"><i class="dot green"></i><span>TF 坐标链<small>变换完整</small></span><b>24 <em>ms</em></b></button>
+        <button data-health="localization"><i class="dot amber"></i><span>地图定位<small>未接入</small></span><b>—</b></button>
+        <button data-health="navigation"><i class="dot amber"></i><span>导航执行<small>未接入</small></span><b>—</b></button>
+      </section>
+    </header>
+    <section id="mapTaskNotice" class="map-task-notice" role="status" aria-live="polite" aria-atomic="true" hidden>
+      <span class="map-task-indicator" aria-hidden="true"></span><div><strong data-task-title></strong><p data-task-detail></p></div><button class="button" aria-label="关闭地图任务提示">关闭</button>
+    </section>
+    <main aria-label="三维工作台" id="mainWorkspace">
+      <section class="workspace-purpose" id="workspacePurpose"><div><span class="eyebrow" id="workspaceEyebrow">MAP WORKSPACE</span><h1 id="workspaceTitle">三维工作台</h1><p id="workspaceDescription">加载已有地图，检查定位与三维路线。</p></div><button class="button" id="workspaceAction">打开地图管理 ↗</button></section>
+      <div class="workspace" id="sceneWorkspace">
+        <section class="scene-panel">
+          <div class="panel-heading"><div><i class="dot green"></i><strong id="sceneTitle">三维场景与感知</strong><span class="subtle">LIVE PREVIEW</span></div><div class="segmented" id="renderModes"><button class="active" data-render="cloud">几何点云</button><button data-render="terrain">可通行地形</button></div></div>
+          <div class="scene" id="scene">
+            <canvas id="mapCanvas" aria-label="模拟多层三维点云，可拖动旋转，滚轮缩放，选择目标时点击设置目标"></canvas>
+            <div class="scene-top"><div class="segmented" id="views"><button class="active" data-view="free">自由</button><button data-view="follow">跟随</button><button data-view="top">俯视</button></div><span class="scene-badge">▧ building_a <span>REV 08</span></span></div>
+            <div class="scene-caption"><span class="mini-label">MULTI-SURFACE MAP</span><strong>园区 A · 连廊与楼梯</strong><small>1F → 2F <span>高差 2.40 m</span></small></div>
+            <div class="scene-tools"><button id="locateRobot" title="定位当前机器狗" aria-label="定位当前机器狗" disabled>◎</button><button id="resetView" title="重置视角" aria-label="重置视角">⌂</button><button id="zoomIn" title="放大" aria-label="放大">＋</button><button id="zoomOut" title="缩小" aria-label="缩小">−</button><button id="toggleLayers" title="图层设置" aria-label="图层设置">▱</button></div>
+            <div class="layer-popover" id="layerPopover" hidden><strong>场景图层</strong><label><input type="checkbox" data-layer="cloud" checked> 几何点云</label><label><input type="checkbox" data-layer="surface" checked> 地表轮廓</label><label><input type="checkbox" data-layer="scan" checked> 当前雷达帧</label><label><input type="checkbox" data-layer="path" checked> 规划路径</label><label><input type="checkbox" data-layer="grid" checked> 参考网格</label><label>高度裁切 <output id="heightValue">3.5 m</output><input type="range" id="heightClip" min="0" max="3.5" step="0.1" value="3.5"></label></div>
+            <div class="floor-switch"><span>楼层</span><button data-floor="all" class="active">全部</button><button data-floor="1">1F</button><button data-floor="2">2F</button></div>
+            <div class="map-label" id="goalLabel">◎ 目标点 · 二层平台</div>
+            <div class="scene-legend"><span><i class="legend-dot cloud"></i>几何点云</span><span><i class="legend-dot walk"></i>普通地表</span><span><i class="legend-dot stair"></i>台阶候选</span><span><i class="legend-line"></i>规划路线</span></div>
+            <div class="axis"><span>Z</span><span>Y</span><span>X</span><b>↗</b></div>
+          </div>
+          <div class="scene-footer"><span>拖动旋转 · Shift + 拖动平移 · 滚轮缩放</span><span id="sceneCoordinate">map · Z ↑ · m</span></div>
+          <div class="scene-metrics"><div><span>地图点数</span><strong>128,640<small>pts</small></strong></div><div><span>可通行节点</span><strong>8,216<small>nodes</small></strong></div><div><span>连通区域</span><strong>2<small>regions</small></strong></div><div><span>累计上升</span><strong>2.40<small>m</small></strong></div></div>
+        </section>
+        <aside class="inspector">
+          <section class="overview-strip" id="overviewSummary" aria-label="工作台总览" hidden><div><small>当前地图</small><strong id="overviewMap">未加载</strong><span id="overviewRevision">先选择地图项目</span><button class="button" data-open-page="maps">管理地图 ↗</button></div><div><small>定位状态</small><strong id="overviewLocalization">等待状态</strong><span>以定位节点新鲜回执为准</span><button class="button" data-open-page="navigation">进入定位 ↗</button></div><div><small>路线检查</small><strong id="overviewRoute">尚未规划</strong><span>几何路线预览 · 执行须就绪</span><button class="button" data-open-page="navigation">设置起终点 ↗</button></div><div><small>地形与通行</small><strong id="overviewTerrain">等待地图</strong><span>检查高度分布与地表连通关系</span><button class="button" data-open-page="terrain">分析地形 ↗</button></div></section>
+          <section class="card task-card"><div class="card-heading"><h2 id="taskTitle">导航任务</h2><span class="pill" id="taskBadge">规划预览</span></div><div class="task-destination"><span class="target-icon">⌖</span><div><small>目标位置</small><strong id="destination">二层 · 连廊平台</strong></div><button class="icon-button" id="pickGoal" title="在地图选择目标" aria-label="在地图选择目标">↗</button></div><div class="coordinates endpoint-coordinates" aria-live="polite"><div><small>起点</small><output id="startCoordinates">未选择起点</output></div><div><small>终点</small><output id="goalCoordinates">未选择终点</output></div><small class="coordinate-frame">map 坐标系 · 单位 m</small></div><div class="route-track"><i></i><span>一层起点</span><span class="stairs-tag">台阶候选 × 2</span><span>二层平台</span></div><div class="route-stats"><div><small>路线长度</small><strong id="routeLength">18.6 <em>m</em></strong></div><div><small>预计耗时</small><strong>— <em>未标定</em></strong></div></div><div class="notice"><span>△</span>几何路线预览，台阶通行能力待实机验证。</div><div class="action-row"><button class="button primary" id="plan">⌁ 重新规划</button><button class="button" id="execute" disabled title="需启用执行、标定与定位就绪">开始执行</button></div><div class="task-secondary"><button id="pause" disabled>暂停任务</button><button id="cancel">清除路线</button></div></section>
+          <section class="card" id="modeCard" hidden></section>
+        </aside>
+      </div>
+      <section id="contentPage" class="content-page" hidden></section>
+      <section class="events" id="events" hidden aria-label="运行事件"><div class="events-heading"><h2>运行事件 <span>SESSION LOG</span></h2><button id="collapseEvents" aria-label="关闭事件">×</button></div><div id="eventList"><div class="event"><time>14:32:08</time><span class="event-type">地图</span><p>园区 A 地图加载完成，三维地表图已就绪。</p><small>演示</small></div><div class="event"><time>14:32:09</time><span class="event-type">规划</span><p>已生成跨层示意路线，包含两段台阶候选。</p><small>演示</small></div><div class="event"><time>14:32:10</time><span class="event-type warn">提示</span><p>执行状态以实时后端回执为准。</p><small>未接入</small></div></div></section>
+    </main>
+    <footer class="bottom-bar"><span><i class="dot amber"></i><b>设计预览</b><span class="footer-detail">所有遥测及地图均为模拟数据 · 不发送运动指令</span></span><button id="stop">◉ 停止运动 <small>演示</small></button></footer>
+  </div>
+  <dialog id="detailDialog"><div class="dialog-heading"><h2 id="dialogTitle">组件详情</h2><button id="closeDialog" aria-label="关闭">×</button></div><div id="dialogBody"></div><button class="button primary" id="confirmDialog">知道了</button></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/examples/jsm/":"/vendor/"}}</script>
+  <script type="module" src="runtime.js"></script>
+</body>
+</html>

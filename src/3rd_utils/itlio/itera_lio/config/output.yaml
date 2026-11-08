@@ -1,0 +1,68 @@
+# IteraLIO 输出、诊断、预览和 PCD 持久化配置。
+
+itera_lio_node:
+  ros__parameters:
+    path:
+      # 轨迹缓存长度和路径发布频率。
+      # 设为 0 表示不裁剪轨迹；轨迹很长时会持续增加内存占用。
+      max_poses: 0
+      publish_frequency_hz: 5.0
+
+    debug:
+      # 调试点云、地图和 RViz 输出开关。
+      launch_rviz: false
+      publish_deskewed: false
+      # 注册点云调试视图计算开销较大；彩色点云和 PCD 输出仍保持启用。
+      publish_registered: false
+      publish_effective: false
+      publish_local_map: false
+      publish_global_map: true
+      publish_map_updates: false
+      publish_optimized_map: true
+
+    preview:
+      # ROS / Web 预览点云的体素、点数和发布频率。
+      registered_voxel_size: 0.01
+      registered_max_points: 30000
+      global_map_voxel_size: 0.05
+      # 有界累计预览缓存；Web 使用空间分块同步，不整图反复传输。
+      # 完整去畸变扫描顺序写盘，不在内存维护第二份完整地图。
+      # 此上限不影响局部配准地图、扫描归档或最终 PCD 密度。
+      global_map_max_points: 1500000
+      global_map_snapshot_frequency_hz: 0.5
+      optimized_map_voxel_size: 0.20
+
+    diagnostics:
+      # 诊断状态输出频率。
+      log_frequency_hz: 0.2
+
+    save_pcd:
+      # 启用后额外归档全视场局部扫描与 IMU，供保存结束后离线 refine。
+      refinement_archive: false
+      # 联合系统在 lio_bringup/config/lio_output.yaml 启用退出保存后的后台 refine。
+      refine_after_save: false
+      # PCD 点云来源（以下选择主要作用于 LIO 的普通点云保存）：
+      # auto：默认以完整去畸变扫描为输入，按每帧位姿转换到地图坐标。
+      # full_deskewed：显式选择相同的完整扫描输入；仍应用下方体素去重。
+      # 普通 LIO 从完整扫描归档导出，保存密度由 voxel_size 控制。
+      # LIVO 的彩色保存使用独立链路；
+      # source 不会将 LIVO 的彩色保存切换为上述 LIO 完整扫描保存。
+      source: auto
+      # 几何 PCD 在地图坐标系中跨帧体素去重，每体素保留首个观测点。
+      # 单位 m；0 保留全部点。只影响 LIO 的 cloud.pcd / cloud_optimized.pcd，
+      # 不改变前端配准、完整扫描归档、预览或历史彩色保存链路。
+      # 导出时额外内存随占用体素数增长；需用实际数据检查细障碍和台阶保留情况。
+      voxel_size: 0.05
+      # 退出时也保存 PCD；运行中可通过 /lio/save_pcd 保存快照。
+      save_pcd_on_shutdown: true
+      # 完整彩色扫描顺序写盘；预览分辨率由 preview.global_map_voxel_size 控制。
+      pcd_directory: data
+
+    image_record:
+      # 图像记录开关、输出目录和运动触发条件。
+      enabled: false
+      directory: images
+      max_rate_hz: 5.0
+      min_translation_m: 0.08
+      min_rotation_deg: 4.0
+      max_interval_sec: 0.5

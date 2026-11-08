@@ -1,0 +1,6 @@
+.localization-card summary{cursor:pointer;font-weight:600;list-style-position:inside}
+.localization-card p{margin-top:10px;overflow-wrap:anywhere}
+.localization-card .action-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.initial-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-top:10px}
+.initial-fields label{font-size:11px;color:var(--muted);min-width:0}
+.initial-fields input{display:block;width:100%;min-width:0;margin-top:5px;padding:7px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:5px}

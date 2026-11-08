@@ -1,0 +1,32 @@
+#pragma once
+#include "dog_navigation/obstacle_memory.hpp"
+#include "dog_navigation/planning_performance.hpp"
+
+namespace dog_terrain { class TerrainGraph; }
+namespace dog_navigation {
+struct Route {
+  bool valid = false;
+  std::string reason;
+  std::vector<int> ids;
+  Points points;
+  std::vector<bool> stairs;
+  Points local;
+  double cost = 0;
+  size_t obstacle_count = 0;
+  Points obstacles_map;
+};
+
+// Plans only on prevalidated 3D terrain connections. A live obstacle overlay
+// may remove connections, never invent support or connect unknown floors.
+class LocalPlanner {
+public:
+  explicit LocalPlanner(std::shared_ptr<const dog_terrain::TerrainGraph> graph, Options options = {});
+  ~LocalPlanner();
+  Route plan(const Point &ground_start, const Point &ground_goal,
+             const Points &obstacles_odom, const Pose &map_from_odom) const;
+  PlanningPerformance performance() const;
+private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
+};
+}  // namespace dog_navigation

@@ -1,0 +1,95 @@
+# IteraLIO 前端和局部地图配置。
+# 由 itera_lio.launch.py 在 mid360.yaml 之后加载。
+
+itera_lio_node:
+  ros__parameters:
+    preprocess:
+      # Keep every Nth input point within each scan, before range filtering.
+      # 1 keeps every point; 3 keeps input indices 0, 3, 6, ... .
+      point_filter_num: 2
+
+    voxel:
+      # 去畸变保留细节，5 cm 配准体素保留稀疏区域的局部支持。
+      deskew_size: 0.01
+      scan_size: 0.05
+      map_size: 0.05
+
+    ikd_tree:
+      # IKD-Tree 地图重建策略和异步重建规模门限。
+      # 当前回放使用混合重建；异步调度仍可能影响重复运行结果。
+      rebuild_policy: hybrid
+      asynchronous_min_subtree_points: 20000
+
+    registration:
+      num_threads: 3
+      # 点到面配准、观测选择、鲁棒估计和入图门控参数。
+      knn: 5
+      max_neighbor_distance: 3.0
+      residual_threshold: 0.5
+      plane:
+        # 局部邻域平面拟合及几何质量检查。
+        max_distance: 0.2
+        max_eigenvalue_ratio: 0.1
+        min_normal_norm: 0.9
+        enable_quality_checks: true
+        min_tangent_ratio: 0.02
+        max_normal_ratio: 0.1
+      # 为 IMU 消费和地图重建峰值预留配准计算余量。
+      max_candidate_points: 1600
+      # LIVO/3D 扫描需要稠密的局部支持地图。这与
+      # max_effective_points 相互独立，后者仍表示配准预算。
+      max_map_insert_points: 1000
+      # 在最终修正位姿下再次检查一致性后再更新地图。
+      map_insert_residual_threshold: 0.2
+      # 回放表明严格收敛门控反而增大了重访高度误差。
+      # 保留残差、修正量和覆盖率门控，并单独记录未收敛帧。
+      require_converged_for_map_insert: false
+      # 保留该门控供受控实验使用；当前数据表明单独强制收敛不能减小高度差。
+      enable_map_insert_quality_gate: false
+      map_insert_max_mean_residual: 0.05
+      map_insert_max_rotation_correction: 0.15
+      map_insert_max_translation_correction: 0.3
+      # Fraction of the capped ESKF observation budget, not the dense scan.
+      map_insert_min_effective_ratio: 0.2
+      # 恢复旧配准预算，按匹配情况自适应缩减候选搜索。
+      adaptive_candidates: true
+      reuse_max_displacement: 0.05
+      max_effective_points: 400
+      selection_voxel_size: 1.0
+      normal_azimuth_bins: 8
+      normal_elevation_bins: 4
+      max_iterations: 6
+      measurement_stddev: 0.05
+      enable_mahalanobis_gate: true
+      chi_square_threshold: 9.21
+      enable_huber: true
+      huber_delta: 2.5
+      freeze_weak_directions: true
+      weak_direction_relative_threshold: 0.001
+      weak_direction_weight: 0.1
+      rotation_convergence: 0.001
+      translation_convergence: 0.001
+      degeneracy:
+        # 配准几何退化检测的特征值和条件数门限。
+        minimum_eigenvalue: 0.000001
+        maximum_condition_number: 100000000.0
+      tracking:
+        # 根据有效点、残差和可观测性切换跟踪状态。
+        minimum_effective_points: 20
+        lost_effective_points: 10
+        maximum_mean_residual: 0.25
+        minimum_whitened_eigenvalue: 0.01
+        maximum_whitened_condition_number: 500.0
+        degraded_frames: 5
+        lost_frames: 5
+        recovery_frames: 10
+        allow_automatic_recovery: false
+
+    local_map:
+      # 局部地图移动、分块删除和单次删除预算。
+      cube_size: 100.0
+      move_threshold: 20.0
+      delete_chunk_size: 10.0
+      max_delete_boxes_per_update: 1
+      max_delete_points_per_update: 5000
+      max_delete_split_depth: 12

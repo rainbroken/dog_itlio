@@ -1,0 +1,9 @@
+std_msgs/Header header
+string task_id
+string map_revision
+uint64 route_generation
+uint64 sequence
+geometry_msgs/Twist velocity
+bool permit
+float64 valid_for_seconds
+string phase

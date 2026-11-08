@@ -1,0 +1,38 @@
+cmake_minimum_required(VERSION 3.16)
+project(dog_terrain LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+find_package(ament_cmake REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(PCL REQUIRED COMPONENTS common io filters kdtree)
+find_package(nlohmann_json REQUIRED)
+find_package(OpenSSL REQUIRED)
+add_library(${PROJECT_NAME} SHARED
+  src/terrain_config.cpp src/terrain_graph.cpp src/surface_builder.cpp
+  src/terrain_collision.cpp src/graph_search.cpp src/graph_search_cache.cpp src/terrain_route.cpp
+  src/terrain_cache.cpp src/pcd_io.cpp src/map_store.cpp src/demo_cloud.cpp)
+add_executable(rebuild_map src/rebuild_map.cpp)
+add_executable(inspect_map src/inspect_map.cpp)
+add_executable(benchmark_route src/benchmark_route.cpp)
+target_link_libraries(benchmark_route ${PROJECT_NAME})
+install(TARGETS benchmark_route DESTINATION lib/${PROJECT_NAME})
+target_link_libraries(inspect_map ${PROJECT_NAME})
+install(TARGETS inspect_map DESTINATION lib/${PROJECT_NAME})
+target_link_libraries(rebuild_map ${PROJECT_NAME})
+install(TARGETS rebuild_map DESTINATION lib/${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>
+  ${PCL_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME} PUBLIC Eigen3::Eigen nlohmann_json::nlohmann_json
+  ${PCL_LIBRARIES} OpenSSL::Crypto)
+target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+install(TARGETS ${PROJECT_NAME} EXPORT export_dog_terrain LIBRARY DESTINATION lib)
+install(DIRECTORY include/ DESTINATION include)
+ament_export_targets(export_dog_terrain HAS_LIBRARY_TARGET)
+ament_export_dependencies(Eigen3 PCL nlohmann_json OpenSSL)
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_terrain test/test_terrain.cpp)
+  target_link_libraries(test_terrain ${PROJECT_NAME})
+endif()
+ament_package()

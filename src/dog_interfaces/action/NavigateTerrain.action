@@ -1,0 +1,11 @@
+# Goal is the map-frame terrain contact position, not base_link height.
+geometry_msgs/PoseStamped goal
+bool use_goal_yaw
+---
+bool success
+string reason
+---
+string phase
+string reason
+float64 distance_remaining
+float64 tracking_error

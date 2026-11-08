@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>多层地形 · 路径规划</title><link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/import_feedback.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 30 16 16 30 2 16Z' fill='%2354dfc3'/%3E%3C/svg%3E">
+  <script type="importmap">{"imports":{"three":"/vendor/three.module.js"}}</script>
+</head>
+<body>
+  <header><div class="brand">◈ <span>DOG / TERRAIN LAB</span></div><span class="tag">三维规划预览 · 不发送运动指令</span></header>
+  <main>
+    <aside>
+      <div class="eyebrow">MULTI-SURFACE NAVIGATION</div><h1>让路线连接楼层</h1>
+      <p class="muted">加载三维点云，检查地面、楼梯与平台之间的真实连接。</p>
+      <section><h2><span>01</span> 地图项目</h2>
+        <button id="demo" class="primary">生成折返楼梯样例</button>
+        <label>地图编号<input id="mapName" placeholder="例如 building_a" maxlength="64"></label>
+        <label class="file">选择 PCD 文件<input id="pcd" type="file" accept=".pcd"></label>
+        <p class="hint" id="fileName">ASCII / binary / binary_compressed · 最大 128 MiB</p>
+        <details><summary>地形与机器狗参数（米）</summary><p class="hint">Z 轴须与重力反向。参数改变后需使用新地图编号重新导入。</p><textarea id="config" rows="12" spellcheck="false">{
+  "resolution": 0.10,
+  "max_step": 0.22,
+  "max_slope_deg": 25,
+  "body_length": 0.66,
+  "body_width": 0.58,
+  "body_bottom": 0.30,
+  "body_top": 0.5,
+  "normal_radius": 0.10,
+  "normal_fallback_radius": 0.15,
+  "normal_thickness": 0.02,
+  "plane_distance": 0.015,
+  "support_distance": 0.12,
+  "connection_distance": 0.25,
+  "terrain_tolerance": 0.02,
+  "clearance_weight": 6.0,
+  "clearance_distance": 0.60
+}</textarea></details>
+        <button id="import">导入并生成导航图</button>
+        <p id="operationMessage" class="hint" role="alert" aria-live="polite"></p>
+        <div class="row"><select id="maps" aria-label="已保存地图"><option value="">选择已保存地图</option></select><button id="load">加载</button></div>
+      </section>
+      <section><h2><span>02</span> 选择路线</h2>
+        <p class="hint">先选起点，再选目标。当前未接定位，起点需手动指定。</p>
+        <button id="pickStart" class="selection active">● 选择起点 <small id="startText">未选择</small></button>
+        <button id="pickGoal" class="selection">◎ 选择目标 <small id="goalText">未选择</small></button>
+        <button id="plan" class="primary">规划三维路线</button>
+        <button id="clear">清除起终点</button>
+      </section>
+      <section><h2><span>03</span> 楼层与显示</h2>
+        <label>显示最低高度 <output id="minLabel">—</output><input id="minHeight" type="range" min="0" max="10" step="0.05" value="0"></label>
+        <label>显示最高高度 <output id="maxLabel">—</output><input id="maxHeight" type="range" min="0" max="10" step="0.05" value="10"></label>
+        <label class="check"><input id="showSurfaces" type="checkbox" checked>显示可通行表面（颜色区分连通区域）</label>
+        <button id="fit">重置视角</button>
+      </section>
+    </aside>
+    <article>
+      <div id="viewport"><div class="empty" id="empty"><div>◈</div><h2>从一张三维地图开始</h2><p>生成样例，或导入包含地面与楼梯的 PCD</p></div></div>
+      <div class="viewport-top"><span id="mapTitle">尚未加载地图</span><span class="tag" id="revision">Z ↑ · 单位 m</span></div>
+      <div id="sourceInfo" class="source-info"></div>
+      <div class="legend"><span><i class="walk"></i>普通行走</span><span><i class="stairs"></i>台阶通行候选</span></div>
+      <div class="metrics"><div><b id="nodeCount">—</b><span>可通行节点</span></div><div><b id="componentCount">—</b><span>连通区域</span></div><div><b id="pathLength">—</b><span>路线长度</span></div><div><b id="pathRise">—</b><span>累计上升</span></div></div>
+      <div class="bottom"><span class="dot" id="statusDot"></span><span id="status" role="status" aria-live="polite">等待地图。左键旋转，右键平移，滚轮缩放，单击表面选点。</span></div>
+    </article>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body></html>

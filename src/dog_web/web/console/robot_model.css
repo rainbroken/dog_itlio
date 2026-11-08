@@ -1,0 +1,5 @@
+.robot-model-status{position:absolute;left:18px;bottom:56px;max-width:calc(100% - 90px);padding:5px 8px;background:#10251ee8;color:#c6d9ce;border:1px solid #355242;border-radius:5px;font-size:11px;pointer-events:none;overflow-wrap:anywhere;z-index:2}
+.posture-actions{display:flex;gap:6px;flex-shrink:0}
+.posture-actions .button{padding:5px 9px;font-size:11px;white-space:nowrap}
+.connection{display:inline-block;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+@media(max-width:1400px){.topbar-left .posture{display:none}}
