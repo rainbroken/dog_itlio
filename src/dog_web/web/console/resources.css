@@ -1,0 +1,21 @@
+.resources-page { max-width: 1100px; padding: 14px 6px 28px; }
+.resources-page header { margin-bottom: 14px; }
+.resources-page h1 { font-size: 23px; }
+.resources-page header p, #resourceStatus { color: var(--muted); font-size: 11px; margin-top: 8px; overflow-wrap: anywhere; }
+.resource-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; margin: 16px 0 22px; }
+.resources-page h2 { font-size: 14px; margin-bottom: 12px; }
+.resource-cores { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; }
+.resource-gauge { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 7px; }
+.resource-gauge > div { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 12px; }
+.resource-gauge output { font-size: 17px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.resource-gauge progress { display: block; appearance: none; width: 100%; height: 8px; margin-top: 13px; border: 0; border-radius: 4px; overflow: hidden; background: var(--panel2); accent-color: var(--accent); }
+.resource-gauge progress::-webkit-progress-bar { background: var(--panel2); }
+.resource-gauge progress::-webkit-progress-value { background: var(--accent); border-radius: 4px; }
+.resource-gauge progress::-moz-progress-bar { background: var(--accent); border-radius: 4px; }
+.resource-gauge small { display: block; margin-top: 9px; font-size: 10px; color: var(--muted); }
+.resources-page[data-stale="true"] .resource-gauge { opacity: .5; }
+.sidebar nav { min-height: 0; overflow-y: auto; flex-shrink: 1; }
+.sidebar nav button { flex-shrink: 0; }
+@media(max-width:1099px) { .resource-cores { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+@media(max-width:820px) { .resource-cores { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media(max-width:600px) { .resource-summary { grid-template-columns: minmax(0,1fr); gap: 10px; }.resource-gauge { padding: 12px; } }

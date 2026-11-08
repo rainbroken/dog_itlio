@@ -36,9 +36,13 @@ private:
   void status(const std::string &reason,bool valid,const Route &route={});
   void invalidate(const std::string &reason,const Route &route={});
   void tick();
-  Options options_;double timeout_=.6,localization_timeout_=.8,tf_timeout_=.4,budget_=.4,rate_=5.,ground_offset_=.65,jump_=.3,speed_=3.;
+  Options options_;double timeout_=.6,localization_timeout_=.8,tf_timeout_=.4,budget_=.4,rate_=5.,ground_offset_=.40,jump_=.3,speed_=3.;
   double duration_ms_=0,last_received_=0,last_scan_stamp_=0,tf_expiry_=0;
   uint64_t generation_=0;bool scan_valid_=false;
+  bool route_generation_valid_=false;
+  std::vector<int> generation_ids_;
+  std::vector<bool> generation_stairs_;
+  builtin_interfaces::msg::Time generation_goal_stamp_;
   std::unique_ptr<LocalizationGate> gate_;
   builtin_interfaces::msg::Time route_stamp_;
   builtin_interfaces::msg::Time goal_stamp_;

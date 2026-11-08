@@ -1,13 +1,17 @@
 #include "dog_navigation/timed_trajectory.hpp"
+#include "dog_navigation/braking_certificate.hpp"
+#include "../local_planner/collision_overlay.hpp"
 #include "executor_node.hpp"
 
 namespace dog_navigation {
 void NavigationExecutor::tick() {
   const double wall = monotonicSeconds(), dt = wall - last_tick_;
   last_tick_ = wall;
+  if(handle_&&planner_goal_deferred_&&supervisor_.active()&&!supervisor_.paused())submitPlannerGoal();
   TrackResult out;
   out.phase = supervisor_.state();
   if (!handle_) {
+    out.reason=supervisor_.reason();
     publishCommand(out, false);
     publishState(out);
     return;
@@ -55,13 +59,14 @@ void NavigationExecutor::tick() {
       tracker_->stop();
       out.phase = supervisor_.state();
       out.reason = supervisor_.reason();
+      if(out.phase=="waiting_route"&&!planner_block_reason_.empty())out.reason=planner_block_reason_;
       publishCommand(out, false);
       publishState(out);
       if (!supervisor_.active()) {
         finish(false, supervisor_.reason());
         return;
       }
-      if (supervisor_.retryDue(wall)) {
+      if ((!robot||!located||wall-last_request_>=retry_interval_)&&supervisor_.retryDue(wall)) {
         if (!robot && robot_.connected && robot_.state_fresh &&
             walk_->service_is_ready()) {
           auto request =
@@ -94,6 +99,7 @@ void NavigationExecutor::tick() {
                          map_from_odom.inverse() *
                              Point(goal.x, goal.y, goal.z),
                          std::atan2(direction.y(), direction.x()), use_yaw_);
+      correction_=map_from_odom;
       if (installed_ids_ != route_->node_ids) {
         dog_interfaces::msg::TimedTerrainTrajectory msg;
         msg.header.frame_id = "map";
@@ -122,7 +128,22 @@ void NavigationExecutor::tick() {
       }
       accepted_generation_ = route_->generation;
     }
-    out = tracker_->update(pose, dt);
+    const auto &config=graph_->config();Options live_options;
+    Points live_points,map_route;
+    for(const auto &p:route_->obstacles)live_points.emplace_back(p.x,p.y,p.z);
+    for(const auto &p:route_->points)map_route.emplace_back(p.x,p.y,p.z);
+    const double body_radius=config.body_length>0?std::hypot(config.body_length,config.body_width)*.5:config.body_radius;
+    CollisionOverlay live(live_points,live_options,body_radius+config.footprint_padding,config.body_top,
+      config.body_length>0?config.body_length+2*config.footprint_padding:0.,
+      config.body_width>0?config.body_width+2*config.footprint_padding:0.);
+    const double map_yaw=pose.yaw+std::atan2(map_from_odom.linear()(1,0),map_from_odom.linear()(0,0));
+    out = tracker_->update(pose, dt,[&](const Velocity &command){
+      // Reserve headroom ahead of the independent guard's exact envelope so
+      // normal approach/turn deceleration can happen before an emergency zero.
+      return certifyTrackingBraking(*graph_,map_from_odom*pose.ground,map_yaw,command,map_route,
+        std::min(.15,options_.acceleration),std::min(.5,options_.yaw_acceleration),
+        [&](const Point &a,const Point &b,double first,double last){return live.motionClear(a,b,first,last);});
+    });
     if (out.fault) {
       supervisor_.abort(out.reason);
       finish(false, out.reason);

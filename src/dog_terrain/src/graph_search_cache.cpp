@@ -27,12 +27,15 @@ GraphSearchWorkspace::~GraphSearchWorkspace() = default;
 bool GraphSearchWorkspace::matches(const TerrainGraph &g) const {
   return &impl_->graph == &g;
 }
-const std::vector<double> &GraphSearchWorkspace::lowerBounds(int target) {
+const std::vector<double> &GraphSearchWorkspace::lowerBounds(int target, const SearchCheckpoint &checkpoint) {
   auto &s = *impl_;
   if (target < 0 || size_t(target) >= s.graph.nodes().size())
     throw std::invalid_argument("Invalid heuristic target");
   if (s.target == target)
     return s.lower;
+  // An interrupted rebuild must never expose a partial heuristic as the
+  // cached result for either the previous target or the new one.
+  s.target = -1;
   s.lower.assign(s.graph.nodes().size(),
                  std::numeric_limits<double>::infinity());
   using Bound = std::pair<double, int>;
@@ -40,6 +43,7 @@ const std::vector<double> &GraphSearchWorkspace::lowerBounds(int target) {
   s.lower[target] = 0;
   queue.emplace(0, target);
   while (!queue.empty()) {
+    if(checkpoint)checkpoint();
     const auto [cost, current] = queue.top();
     queue.pop();
     if (cost > s.lower[current])

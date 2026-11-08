@@ -21,12 +21,19 @@ navigation_executor:
     # Hz：轨迹跟踪、任务状态更新与运动许可发布；修改后重启。
     # 周期必须小于现有 0.15 s 许可有效期；实际频率受处理耗时影响。
     controller_frequency: 20.0
-    walk_speed: 0.20
-    stair_speed: 0.08
-    acceleration: 0.15
-    yaw_rate: 0.30
+    # dog_ws 的 BPX 适配使用 0.21 绕过 0.20 启动死区；不照搬其 0.90 巡航上限。
+    walk_speed: 0.30
+    stair_speed: 0.21
+    startup_linear_speed: 0.21
+    startup_yaw_rate: 0.21
+    acceleration: 0.50
+    yaw_rate: 0.50
     yaw_acceleration: 0.50
-    stair_yaw_rate: 0.15
+    stair_yaw_rate: 0.21
     goal_xy_tolerance: 0.15
     goal_z_tolerance: 0.12
     max_tracking_error: 0.12
+    # 前视跟踪：普通细碎节点连续通过；急拐角和地形切换仍停车。
+    # 0 可恢复逐段停车；角度单位 rad，位置仍使用三维地形。
+    lookahead_distance: 0.80
+    continuous_turn_angle: 1.05

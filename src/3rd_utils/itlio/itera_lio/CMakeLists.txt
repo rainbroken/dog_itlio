@@ -313,7 +313,7 @@ option(ITERA_LIO_EXACT_LOOP_SCORING "Use bounded exact SIMD 1NN scores and recip
 target_compile_features(loop_closure PUBLIC cxx_std_17)
 target_compile_definitions(loop_closure PRIVATE ${ITERA_LOOP_CORE_DEFINITIONS}
   ITERA_LIO_CACHE_LOOP_SOURCE=$<BOOL:${ITERA_LIO_CACHE_LOOP_SOURCE}>
- ITERA_LIO_EXACT_LOOP_SCORING=$<BOOL:${ITERA_LIO_EXACT_LOOP_SCORING}>)
+  ITERA_LIO_EXACT_LOOP_SCORING=$<BOOL:${ITERA_LIO_EXACT_LOOP_SCORING}>)
 target_include_directories(loop_closure PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>

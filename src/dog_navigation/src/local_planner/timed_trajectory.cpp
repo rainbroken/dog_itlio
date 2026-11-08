@@ -27,13 +27,19 @@ void ExecutionOptions::validate() const {
   for (double value :
        {walk_speed, stair_speed, acceleration, yaw_rate, yaw_acceleration,
         stair_yaw_rate, heading_tolerance, waypoint_tolerance, goal_xy, goal_z,
-        goal_yaw, max_tracking_error, stopped_speed, settle_time})
+        goal_yaw, max_tracking_error, stopped_speed, settle_time, continuous_turn_angle})
     if (!std::isfinite(value) || value <= 0)
       throw std::invalid_argument(
           "Execution limits must be finite and positive");
+  if(!std::isfinite(lookahead_distance)||lookahead_distance<0||lookahead_distance>1.||
+     continuous_turn_angle>1.2||continuous_turn_angle<=heading_tolerance)
+    throw std::invalid_argument("Invalid lookahead or continuous turn angle");
   if (stair_speed > walk_speed || stair_yaw_rate > yaw_rate || walk_speed > 1 ||
       yaw_rate > 1.5)
     throw std::invalid_argument("Invalid execution speed hierarchy");
+  if(!std::isfinite(startup_linear_speed)||!std::isfinite(startup_yaw_rate)||
+     startup_linear_speed<0||startup_yaw_rate<0||startup_linear_speed>stair_speed||startup_yaw_rate>stair_yaw_rate)
+    throw std::invalid_argument("Startup thresholds must be nonnegative and no greater than normal/stair limits");
 }
 std::vector<TimedSample>
 parameterizeTerrainPath(const Points &path, const std::vector<bool> &stairs,

@@ -32,6 +32,15 @@ public:
       values_.emplace(key, value);
     return value;
   }
+  bool turnClear(int previous,int current,int next) {
+    if(empty_||previous<0)return true;
+    const uint64_t n=graph_.nodes().size(),key=(uint64_t(previous+1)*n+uint64_t(current))*n+uint64_t(next);
+    const auto found=turn_values_.find(key);if(found!=turn_values_.end())return found->second;
+    const auto &a=graph_.nodes()[previous].point,&b=graph_.nodes()[current].point,&c=graph_.nodes()[next].point;
+    const bool clear=overlay_.motionClear(b,b,std::atan2(b.y()-a.y(),b.x()-a.x()),std::atan2(c.y()-b.y(),c.x()-b.x()));
+    if(turn_values_.size()<250000)turn_values_.emplace(key,clear);
+    return clear;
+  }
 
 private:
   const dog_terrain::TerrainGraph &graph_;
@@ -39,5 +48,6 @@ private:
   bool empty_;
   PlanningPerformance &performance_;
   std::unordered_map<uint64_t, double> values_;
+  std::unordered_map<uint64_t, bool> turn_values_;
 };
 } // namespace dog_navigation

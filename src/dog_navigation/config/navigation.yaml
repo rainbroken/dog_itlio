@@ -18,7 +18,7 @@ local_navigation:
 
     # —— 机身与地面关系 ——
     # base_link 到名义接地位置的机身坐标系偏移量大小，按实际站姿校准。
-    base_ground_offset: 0.65
+    base_ground_offset: 0.40
 
     # —— 里程计连续性 ——
     odom_jump_tolerance: 0.3     # 位移跳变判断的额外容差

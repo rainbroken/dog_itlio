@@ -8,6 +8,7 @@ struct SafetyInput {
   bool auto_enabled = false, estop = false;
   double command_deadline = 0, manual_deadline = 0;
   Velocity autonomous, manual;
+  Velocity autonomous_limits{.30, autonomous_lateral_speed, .50};
   std::string task_id;
 };
 struct SafetyOutput {

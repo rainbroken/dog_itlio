@@ -31,6 +31,7 @@ void LocalNavigation::status(const std::string &reason,bool valid,const Route &r
       {"turn_hits",performance.turn_cache_hits},{"turn_entries",performance.turn_cache_entries},
       {"lower_bound_builds",performance.lower_bound_builds}};
     value["frame_edge_queries"]={{"evaluated",performance.dynamic_edge_evaluations},{"hits",performance.dynamic_edge_cache_hits}};
+    value["goal_stamp"]={{"sec",goal_stamp_.sec},{"nanosec",goal_stamp_.nanosec}};
     std_msgs::msg::String msg;msg.data=value.dump();status_pub_->publish(msg);
     dog_interfaces::msg::TerrainRoute packet;packet.header.frame_id=map_frame_;packet.header.stamp=now();
     packet.map_project=project_.string();packet.map_revision=graph_->revision();packet.generation=generation_;
@@ -42,6 +43,7 @@ void LocalNavigation::status(const std::string &reason,bool valid,const Route &r
     route_pub_->publish(packet);
   }
 void LocalNavigation::invalidate(const std::string &reason,const Route &route) {
+    route_generation_valid_=false;
     const auto empty=path({},now());path_pub_->publish(empty);local_pub_->publish(empty);status(reason,false,route);
   }
 }  // namespace dog_navigation

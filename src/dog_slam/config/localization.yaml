@@ -65,7 +65,7 @@ map_localizer:
       failures_before_global: 3
       xy_step: 1.0
       height_step: 0.5
-      body_height: 0.65          # 名义机身离地高度，按实际站姿校准
+      body_height: 0.40          # 已确认的 base_link 到支撑面的名义高度
       yaw_steps: 24
       max_hypotheses: 30000
       scoring_points: 128
@@ -76,4 +76,4 @@ map_localizer:
     # —— 可选人工初值 ——
     # 地图中的 base_link 位姿 [x,y,z,roll,pitch,yaw]；角度为 rad。
     # z 是机身高度，不能直接填脚下地面高度；网页或 /initialpose 可重新设置。
-    # initial_pose: [0.0, 0.0, 0.65, 0.0, 0.0, 0.0]
+    # initial_pose: [0.0, 0.0, 0.40, 0.0, 0.0, 0.0]

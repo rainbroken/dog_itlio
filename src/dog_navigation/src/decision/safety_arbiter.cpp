@@ -47,12 +47,18 @@ SafetyOutput SafetyArbiter::update(const SafetyInput &i, double now) {
     out.reason = "nonfinite_command";
     return out;
   }
-  // Keep existing manual speed settings and driver limits. Autonomous limits
-  // remain conservative until braking and tracking are calibrated.
+  // The guard supplies the validated startup profile and fresh task limits.
+  // A hidden fixed clamp here would disagree with the executor and Web UI.
   if (out.owner == "autonomous") {
-    out.command.x = std::clamp(out.command.x, -.3, .3);
-    out.command.y = std::clamp(out.command.y, -.15, .15);
-    out.command.yaw = std::clamp(out.command.yaw, -.5, .5);
+    const auto &v=i.autonomous_limits;
+    if(!std::isfinite(speed(v))||v.x<=0||v.y<=0||v.yaw<=0||v.x>1||v.y>1||v.yaw>1.5){
+      out.command={};out.owner="none";out.reason="invalid_autonomous_limits";return out;
+    }
+    out.command.x = std::clamp(out.command.x, -v.x, v.x);
+    out.command.y = std::clamp(out.command.y, -v.y, v.y);
+    const double planar=std::hypot(out.command.x,out.command.y);
+    if(planar>v.x){out.command.x*=v.x/planar;out.command.y*=v.x/planar;}
+    out.command.yaw = std::clamp(out.command.yaw, -v.yaw, v.yaw);
   }
   return out;
 }

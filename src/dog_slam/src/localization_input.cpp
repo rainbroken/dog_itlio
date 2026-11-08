@@ -4,6 +4,11 @@
 namespace dog_slam {
 void MapLocalizer::enqueue(Command c, const std::string &label) {
     {std::lock_guard<std::mutex> lock(mutex_); ++generation_; public_.valid=false; label_=label;
+      if(c.kind==Kind::GlobalRelocalize){global_started_=Steady::now();global_duration_ms_=0;global_timing_state_="running";}
+      else if(c.kind==Kind::Load||c.kind==Kind::Reset){global_timing_state_="idle";global_duration_ms_=0;}
+      else if(c.kind==Kind::Seed&&global_timing_state_=="running"){
+        global_duration_ms_=std::chrono::duration<double,std::milli>(Steady::now()-global_started_).count();global_timing_state_="cancelled";
+      }
       commands_.push_back(std::move(c)); if (commands_.size()>16) commands_.pop_front();}
     condition_.notify_one();
   }
@@ -29,7 +34,17 @@ void MapLocalizer::receive(sensor_msgs::msg::PointCloud2::ConstSharedPtr msg) {
       }
       return;
     }
-    last_received_stamp_=stamp; input_receipt_=Steady::now(); cloud_=std::move(msg); condition_.notify_one();
+    const auto receipt=Steady::now();
+    // Registration deliberately keeps only the newest scan and can spend
+    // seconds on global search. Detect gaps in received input, not in the
+    // sparse scans chosen by that worker.
+    if (last_received_stamp_>0 && (stamp-last_received_stamp_>timeout_ ||
+        std::chrono::duration<double>(receipt-input_receipt_).count()>timeout_)) {
+      ++generation_; public_.valid=false; label_="lost"; reason_="scan_gap";
+      Command c; c.kind=Kind::Invalidate; c.reason="scan_gap"; commands_.push_back(std::move(c));
+      if (commands_.size()>16) commands_.pop_front();
+    }
+    last_received_stamp_=stamp; input_receipt_=receipt; cloud_=std::move(msg); condition_.notify_one();
   }
 Pose3 MapLocalizer::lookup(const std::string &parent, const std::string &child, const builtin_interfaces::msg::Time &stamp) {
     if (parent==child) return Pose3::Identity();

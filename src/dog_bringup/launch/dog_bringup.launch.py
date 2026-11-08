@@ -68,18 +68,20 @@ def mode_nodes(context):
     shared = {'use_sim_time': LaunchConfiguration('use_sim_time')}
     return [
         RegisterEventHandler(OnProcessExit(on_exit=navigation_child_exit)),
-        IncludeLaunchDescription(PythonLaunchDescriptionSource(PathJoinSubstitution([
+        # Includes set launch configurations in their enclosing scope. Keep
+        # child bridge/config overrides away from bringup's sensor conversion.
+        GroupAction([IncludeLaunchDescription(PythonLaunchDescriptionSource(PathJoinSubstitution([
             FindPackageShare('dog_slam'), 'launch', 'localization.launch.py'])),
             launch_arguments={**shared, 'map_path': str(root / map_id),
                 **{key: LaunchConfiguration(key) for key in ('start_lio', 'localization_config')},
                 'bridge': 'false',  # Conversion is owned by bringup in both modes.
-            }.items()),
-        IncludeLaunchDescription(PythonLaunchDescriptionSource(PathJoinSubstitution([
+            }.items())]),
+        GroupAction([IncludeLaunchDescription(PythonLaunchDescriptionSource(PathJoinSubstitution([
             FindPackageShare('dog_navigation'), 'launch', 'execution.launch.py'])),
             launch_arguments={**shared, 'map_root': str(root), 'map_id': map_id,
                               'config': LaunchConfiguration('navigation_config'),
                               'execution_config': LaunchConfiguration('execution_config'),
-                              'execute': LaunchConfiguration('execute'), 'guard': 'false'}.items()),
+                              'execute': LaunchConfiguration('execute'), 'guard': 'false'}.items())]),
         LogInfo(msg='Navigation mode: localization, planning and task execution share one map project. '
                     'Initialize localization, then submit /navigate_terrain or use the web console. '
                     'Autonomous output requires execute=true and confirmed calibration.'),

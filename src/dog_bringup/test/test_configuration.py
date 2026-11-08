@@ -60,6 +60,7 @@ def test_saved_motion_speeds_survive_bringup_restart(tmp_path):
         log_path = tmp_path / f'restart-{run}.log'
         with log_path.open('w') as log:
             process = subprocess.Popen(['ros2', 'launch', 'dog_bringup', 'dog_bringup.launch.py',
+                'mode:=mapping',
                 'lidar:=false', 'driver:=false', 'bridge:=false', 'host:=127.0.0.1', 'port:=0',
                 f'map_root:={tmp_path / "maps"}', f'slam_output:={tmp_path / "slam"}',
                 f'motion_config:={settings}'],

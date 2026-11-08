@@ -3,6 +3,7 @@
 #include "navigation_bridge.hpp"
 #include "motion_settings.hpp"
 #include "cloud_preview.hpp"
+#include "stream_frequency.hpp"
 
 #include <rclcpp/rclcpp.hpp>
 #include <dog_interfaces/msg/robot_status.hpp>
@@ -98,7 +99,8 @@ public:
     for (const auto &[key, s] : streams_) {
       const double age = std::chrono::duration<double>(Clock::now() - s.received).count();
       streams[key] = {{"age_ms", age * 1000}, {"stamp_age_ms", (now().seconds() - s.stamp) * 1000},
-        {"hz", s.hz}, {"fresh", age < 1.0 && std::abs(now().seconds() - s.stamp) < 1.0}};
+        {"hz", s.rate.hz()},{"hz_available",s.rate.available()},{"hz_source","message_stamp"},
+        {"fresh", age < 1.0 && std::abs(now().seconds() - s.stamp) < 1.0}};
     }
     const auto pose=poseLocked();const bool chain=!pose.is_null();
     return {{"ros", true}, {"streams", streams}, {"robot", status_}, {"battery", fresh("battery") ? battery_ : Json(nullptr)},
@@ -137,7 +139,9 @@ public:
       {"body_orientation",ready()?(fresh("body_imu")?imu_orientation_:fresh("velocity")?body_orientation_:Json(nullptr)):Json(nullptr)},
       {"pose",pose},{"tf_ready",!pose.is_null()},{"robot",ready()?status_:Json::object()}};
   }
+  Json navigationPaths() { return navigation_->snapshot().at("live_paths"); }
   Json command(const std::string &path, const Json &body) {
+    if(path=="/api/navigation/cancel"){std::lock_guard<std::mutex> lock(mutex_);stop_reason_="navigation_cancel";stopLocked();}
     if(path.rfind("/api/navigation/",0)==0)return navigation_->command(path,body);
     if(path.rfind("/api/localization/",0)==0)return localization_->command(path,body);
     if (!allow_mapping_ && (path == "/api/slam/start" || path == "/api/slam/save"))
@@ -243,16 +247,13 @@ private:
       return {{"position",{p.x,p.y,p.z}},{"quaternion",{q.x,q.y,q.z,q.w}},{"frame","map"},{"age_ms",age*1000}};
     }catch(const tf2::TransformException &){return nullptr;}
   }
-  struct Stream { Clock::time_point received; double stamp = 0, hz = 0; };
+  struct Stream { Clock::time_point received; double stamp = 0;StreamFrequency rate; };
   template<class Message, class Callback> void subscribe(const std::string &topic, const std::string &key, Callback callback) {
     subscriptions_.push_back(create_subscription<Message>(topic, rclcpp::SensorDataQoS(),
       [this, key, callback](typename Message::ConstSharedPtr m) {
         std::lock_guard<std::mutex> guard(mutex_);
         auto &s = streams_[key]; const auto received = Clock::now();
-        if (s.received.time_since_epoch().count()) {
-          double dt = std::chrono::duration<double>(received - s.received).count();
-          if (dt > 0) s.hz = s.hz == 0 ? 1 / dt : .9 * s.hz + .1 / dt;
-        }
+        s.rate.observe(rclcpp::Time(m->header.stamp).nanoseconds());
         s.received = received; s.stamp = rclcpp::Time(m->header.stamp).seconds(); callback(*m);
       }));
   }

@@ -18,8 +18,8 @@ from rclpy.qos import QoSProfile, DurabilityPolicy
 import rclpy
 
 
-@pytest.mark.parametrize("global_mode", [False, True, "history"])
-def test_localization_lifecycle(monkeypatch, tmp_path, global_mode):
+@pytest.mark.parametrize("global_mode,registration_rate", [(False,8.), (True,8.), ("history",8.), (False,.5)])
+def test_localization_lifecycle(monkeypatch, tmp_path, global_mode, registration_rate):
     monkeypatch.setenv("ROS_DOMAIN_ID", str(130 + os.getpid() % 80))
     monkeypatch.setenv("ROS_LOCALHOST_ONLY", "1")
     points = []
@@ -40,7 +40,9 @@ def test_localization_lifecycle(monkeypatch, tmp_path, global_mode):
     config = Path(get_package_prefix("dog_slam")) / "share/dog_slam/config/localization.yaml"
     log = (tmp_path / "node.log").open("w+")
     process = subprocess.Popen([str(executable), "--ros-args", "--params-file", str(config),
-        "-p", f"map_path:={pcd}", "-p", "registration_rate:=8.0", "-p", "data_timeout:=1.0",
+        # Sparse registration must still accumulate confirmations while scan
+        # input is continuous. It must not bypass the output validity timeout.
+        "-p", f"map_path:={pcd}", "-p", f"registration_rate:={registration_rate}", "-p", "data_timeout:=1.0",
         "-p", "recovery_interval:=0.2",
         "-p", f"global_relocalization.enabled:={str(bool(global_mode)).lower()}",
         "-p", f"global_relocalization.on_startup:={str(global_mode == 'history').lower()}",
@@ -108,6 +110,11 @@ def test_localization_lifecycle(monkeypatch, tmp_path, global_mode):
             seed.pose.pose.position.x, seed.pose.pose.position.y, seed.pose.pose.position.z = body
             seed.pose.pose.orientation.w = 1.; seed_pub.publish(seed)
         assert until(lambda: status and status[-1]["valid"] and poses), json.dumps(status[-1])
+        assert status[-1]["input_fresh"]
+        assert isinstance(status[-1]["registration_running"],bool)
+        if global_mode:
+            assert status[-1]["global_timing_state"]=="succeeded"
+            assert status[-1]["global_relocalization_elapsed_ms"]>0
         assert status[-1]["localization_source"] == ("historical_keyframes" if global_mode == "history" else
             "global_map_search" if global_mode else "initial_pose")
         p = poses[-1].pose.position
@@ -119,7 +126,8 @@ def test_localization_lifecycle(monkeypatch, tmp_path, global_mode):
         t = transforms[-1].transform.translation
         assert math.dist((t.x,t.y,t.z), (-1.8,.1,-.35)) < tolerance
         # Stop clouds while odometry continues: validity and TF refresh must stop.
-        assert until(lambda: not status[-1]["valid"] and status[-1]["state"] == "lost", send=False)
+        assert until(lambda: not status[-1]["valid"] and status[-1]["state"] == "lost" and
+                     not status[-1]["input_fresh"], send=False)
         until(lambda: False, seconds=.4, send=False)
         count = len(transforms)
         until(lambda: False, seconds=.4, send=False)

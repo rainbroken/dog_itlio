@@ -14,7 +14,8 @@ from ament_index_python.packages import get_package_share_directory
 
 import rclpy
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, TransformStamped, Twist
-from nav_msgs.msg import Path as PathMsg
+from nav_msgs.msg import Path as PathMsg, Odometry
+from dog_interfaces.msg import TerrainRoute
 from rcl_interfaces.srv import GetParameters
 from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import String
@@ -27,20 +28,31 @@ def fixture(root):
                    env=dict(os.environ,DOG_NAV_TEST_MAP_ROOT=str(root),DOG_NAV_TEST_ROOM="1"))
 
 
-def start(root, start_lio):
+def start(root, start_lio, bridge=False):
     # This test exercises manual initialization and the disabled-global API.
     # Production defaults now enable automatic historical relocalization.
     config=yaml.safe_load((Path(get_package_share_directory("dog_slam"))/"config/localization.yaml").read_text())
     config["map_localizer"]["ros__parameters"]["global_relocalization"]["enabled"]=False
+    config["map_localizer"]["ros__parameters"]["global_relocalization"]["body_height"]=.65
     localization_config=root/"manual-localization.yaml"
     localization_config.write_text(yaml.safe_dump(config))
+    # Synthetic fixtures deliberately use a .65 m body, independent of hardware.
+    nav_share=Path(get_package_share_directory('dog_navigation'))
+    extra=[]
+    for argument,name,nodes in [('navigation_config','navigation',('local_navigation',)),
+                                ('execution_config','execution',('navigation_executor','velocity_guard'))]:
+        document=yaml.safe_load((nav_share/f'config/{name}.yaml').read_text())
+        for node in nodes:document[node]['ros__parameters']['base_ground_offset']=.65
+        path=root/(name+'-fixture.yaml');path.write_text(yaml.safe_dump(document));extra.append(f'{argument}:={path}')
     with socket.socket() as s:
         s.bind(("127.0.0.1",0));port=s.getsockname()[1]
     log_path=root/"bringup.log";log=log_path.open("w")
     p=subprocess.Popen(["ros2","launch","dog_bringup","dog_bringup.launch.py",
-        "mode:=navigation","lidar:=false","driver:=false","bridge:=false",
+        # This fixture previews /goal_pose; do not inherit the user's hardware
+        # execute switch from bringup.yaml.
+        "mode:=navigation","execute:=false","lidar:=false","driver:=false",f"bridge:={str(bridge).lower()}",
         f"start_lio:={str(start_lio).lower()}",f"port:={port}",f"map_root:={root}",f"motion_config:={root}/motion.json", "map_id:=scene",
-        f"localization_config:={localization_config}"],
+        f"localization_config:={localization_config}",*extra],
         stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
     return p,port,log,log_path
 
@@ -69,7 +81,8 @@ def test_navigation_bringup_localizes_replans_and_invalidates(monkeypatch,tmp_pa
     assert b"FIELDS x y z" in header
     static=b"".join(struct.pack("fff",x+1.35,y,z-.65) for x,y,z in struct.iter_unpack("fff",data))
     rclpy.init();node=rclpy.create_node("bringup_pipeline_test")
-    localized=[];planning=[];paths=[];map_tf=[];velocities=[]
+    localized=[];planning=[];paths=[];map_tf=[];velocities=[];routes=[]
+    node.create_subscription(TerrainRoute,"/local_navigation/terrain_route",routes.append,20)
     node.create_subscription(String,"/map_localizer/status",lambda m:localized.append(json.loads(m.data)),20)
     node.create_subscription(String,"/local_navigation/status",lambda m:planning.append(json.loads(m.data)),20)
     node.create_subscription(PathMsg,"/local_navigation/global_path",paths.append,10)
@@ -78,6 +91,7 @@ def test_navigation_bringup_localizes_replans_and_invalidates(monkeypatch,tmp_pa
     tf=node.create_publisher(TFMessage,"/tf",10)
     scan=node.create_publisher(PointCloud2,"/lio/cloud_deskewed",10)
     goal_pub=node.create_publisher(PoseStamped,"/goal_pose",10)
+    lio_odom=node.create_publisher(Odometry,"/lio/odom",10)
     mode="clear"
 
     def step(send=True):
@@ -86,6 +100,8 @@ def test_navigation_bringup_localizes_replans_and_invalidates(monkeypatch,tmp_pa
             t=TransformStamped();t.header.frame_id=parent;t.child_frame_id=child;t.header.stamp=stamp
             t.transform.translation.x=x;t.transform.translation.z=z;t.transform.rotation.w=1.;transforms.append(t)
         tf.publish(TFMessage(transforms=transforms))
+        odom=Odometry();odom.header.stamp=stamp;odom.header.frame_id="odom";odom.child_frame_id="base_link"
+        odom.pose.pose.position.x=-1.5;odom.pose.pose.position.z=.65;odom.pose.pose.orientation.w=1.;lio_odom.publish(odom)
         if send:
             novel=[]
             if mode=="obstacle":novel=[(0.,0.,z) for z in (.2,.4,.6,.8)]
@@ -120,13 +136,37 @@ def test_navigation_bringup_localizes_replans_and_invalidates(monkeypatch,tmp_pa
         assert until(lambda:api(port,f'/api/jobs/{load["job"]}')["state"]=="complete")
         metadata=api(port,"/api/map")
         initial={"map_id":"scene","revision":metadata["revision"],"ground_position":[-1.5,0,0],"yaw":0.,"body_height":.65}
-        assert api(port,"/api/localization/initialize",initial)["success"]
+        # Map readiness does not imply discovery of the synthetic odom TF in
+        # the web bridge. Keep publishing while waiting for seed acceptance.
+        assert until(lambda:api(port,"/api/localization/initialize",initial)["success"])
         try:api(port,"/api/localization/global_relocalize",initial)
         except urllib.error.HTTPError as error:assert error.code==400
         else:raise AssertionError("Web enabled global search despite disabled YAML flag")
         goal=PoseStamped();goal.header.frame_id="map";goal.pose.position.x=1.5;goal.pose.orientation.w=1.;goal_pub.publish(goal)
         assert until(lambda:localized[-1]["valid"] and planning[-1]["valid"] and paths and paths[-1].poses), (localized[-1],planning[-1])
+        # A web preview must derive its start from fresh localization, even if
+        # a client supplies a conflicting manual start alongside the flag.
+        preview_result={}
+        preview_errors=[]
+        def live_preview():
+            try:
+                preview_result.update(api(port,"/api/plan",{"map_id":"scene","revision":metadata["revision"],
+                    "use_robot_start":True,"start":[1000,1000,1000],"goal":[1.5,0,0]}))
+            except urllib.error.HTTPError as error:
+                preview_errors[:]=[error.read().decode()];return False
+            return preview_result.get("start_source")=="localization"
+        assert until(live_preview),preview_errors
+        assert sum((a-b)**2 for a,b in zip(preview_result["points"][0],[-1.5,0,0]))<.25**2
         assert map_tf and node.count_publishers("/tf")==2
+        # Refreshing the same route must not revoke an in-flight command.
+        routes.clear()
+        assert until(lambda:len(routes)>=6)
+        stable_pairs=0
+        for a,b in zip(routes,routes[1:]):
+            if a.valid and b.valid and a.node_ids==b.node_ids and a.stairs==b.stairs and a.goal_stamp==b.goal_stamp:
+                assert a.generation==b.generation
+                stable_pairs+=1
+        assert stable_pairs>=3
         mode="obstacle"
         assert until(lambda:planning[-1]["valid"] and planning[-1]["novel_obstacles"]>0),planning[-1]
         assert until(lambda:paths[-1].poses and all(p.pose.position.x**2+p.pose.position.y**2>.17 for p in paths[-1].poses))
@@ -147,7 +187,7 @@ def test_navigation_bringup_localizes_replans_and_invalidates(monkeypatch,tmp_pa
 def test_navigation_bringup_starts_real_lio_with_exclusive_map_tf(monkeypatch,tmp_path):
     # Do not discover a just-terminated previous test's parameter service.
     monkeypatch.setenv("ROS_DOMAIN_ID",str(225+os.getpid()%5));monkeypatch.setenv("ROS_LOCALHOST_ONLY","1")
-    fixture(tmp_path);process,port,log,log_path=start(tmp_path,True)
+    fixture(tmp_path);process,port,log,log_path=start(tmp_path,True,bridge=True)
     rclpy.init();node=rclpy.create_node("bringup_lio_probe");statuses=[]
     node.create_subscription(String,"/map_localizer/status",lambda m:statuses.append(json.loads(m.data)),10)
     try:
@@ -167,6 +207,16 @@ def test_navigation_bringup_starts_real_lio_with_exclusive_map_tf(monkeypatch,tm
         deadline=time.monotonic()+10
         while time.monotonic()<deadline and not(statuses and statuses[-1]["map_ready"]):rclpy.spin_once(node,timeout_sec=.1)
         assert statuses and statuses[-1]["map_ready"] and not statuses[-1]["valid"]
+        # The localization child disables its own bridge; this must not disable
+        # bringup's bridge or leak into sibling launch configurations.
+        deadline=time.monotonic()+8
+        while time.monotonic()<deadline:
+            rclpy.spin_once(node,timeout_sec=.1)
+            if node.count_publishers("/interfaces/lidar")==1 and node.count_publishers("/interfaces/imu")==1:
+                break
+        assert node.count_publishers("/interfaces/lidar")==1,log_path.read_text()
+        assert node.count_publishers("/interfaces/imu")==1,log_path.read_text()
+        assert node.get_node_names().count("livox_to_pointcloud2")==1
         deadline=time.monotonic()+8
         while True:
             try:assert not api(port,"/api/robot")["mapping"]["start_allowed"];break

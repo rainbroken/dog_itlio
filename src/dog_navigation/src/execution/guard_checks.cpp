@@ -1,9 +1,11 @@
 #include "../common/navigation_ros.hpp"
 #include "dog_terrain/collision_geometry.hpp"
+#include "dog_navigation/braking_sweep.hpp"
 #include "velocity_guard_node.hpp"
 
 namespace dog_navigation {
 bool VelocityGuard::collisionFree(const Velocity &v) {
+  collision_check_expired_=false;
   if (!graph_ || !route_)
     return false;
   const auto map = buffer_->lookupTransform("map", "odom", tf2::TimePointZero);
@@ -15,56 +17,51 @@ bool VelocityGuard::collisionFree(const Velocity &v) {
   const Point a = map_body * Point(0, 0, -offset_);
   const double yaw =
       std::atan2(map_body.linear()(1, 0), map_body.linear()(0, 0));
-  // Software braking envelope; physical deceleration must be calibrated before
-  // enabling hardware. The controller also reduces speed ahead of every corner.
-  const double velocity =
-      std::max(std::hypot(v.x, v.y), std::hypot(measured_.x, measured_.y));
-  const double distance = velocity * .15 + velocity * velocity / (2 * .15);
-  Point b = a + Point((v.x * std::cos(yaw) - v.y * std::sin(yaw)) * .15,
-                      (v.x * std::sin(yaw) + v.y * std::cos(yaw)) * .15, 0);
-  if (std::hypot(v.x, v.y) > 1e-6) {
-    b = a + (b - a).normalized() * distance;
-    double best = std::numeric_limits<double>::infinity();
-    Point end = a, delta = Point::Zero();
-    for (size_t i = 1; i < route_->points.size(); ++i) {
-      const auto &p = route_->points[i - 1], &q = route_->points[i];
-      const Point first(p.x, p.y, p.z), d(q.x - p.x, q.y - p.y, q.z - p.z);
-      const double n = d.head<2>().squaredNorm();
-      if (n < 1e-12)
-        continue;
-      const double t =
-          std::clamp((a - first).head<2>().dot(d.head<2>()) / n, 0., 1.);
-      const double error = (a - first - t * d).norm();
-      if (error < best) {
-        best = error;
-        end = first + d;
-        delta = d;
-      }
-    }
-    if (best > .25 || distance > (end - a).head<2>().norm() + .04)
-      return false;
-    const double length = delta.head<2>().squaredNorm();
-    if (length < 1e-12)
-      return false;
-    b.z() = end.z() - delta.z() +
-            delta.z() *
-                std::clamp((b - end + delta).head<2>().dot(delta.head<2>()) /
-                               length,
-                           0., 1.);
-  }
-  const double rotation =
-      v.yaw * .15 + std::copysign(v.yaw * v.yaw / (2 * .5), v.yaw);
-  if (!graph_->motionClear(a, b, yaw, yaw + rotation))
-    return false;
   const auto &c = graph_->config();
   const double radius =
       (c.body_length > 0 ? std::hypot(c.body_length, c.body_width) * .5
                          : c.body_radius) +
       c.footprint_padding + .12 + .10 * .866025404;
-  for (const auto &p : route_->obstacles)
-    if (dog_terrain::sweptCylinderContact(a, b, Point(p.x, p.y, p.z), radius,
-                                          .12 - .05, c.body_top + .12 + .05))
-      return false;
+  const double padding=c.footprint_padding+.12+.10*.866025404;
+  const double begin=guardWall();
+  const auto terrain=[&](Point &p){
+    double best=std::numeric_limits<double>::infinity();double height=p.z();
+    for(size_t i=1;i<route_->points.size();++i){
+      const auto &u=route_->points[i-1],&v=route_->points[i];
+      const Point first(u.x,u.y,u.z),delta(v.x-u.x,v.y-u.y,v.z-u.z);
+      const double n=delta.head<2>().squaredNorm();if(n<1e-12)continue;
+      const double t=std::clamp((p-first).head<2>().dot(delta.head<2>())/n,0.,1.);
+      const Point projected=first+t*delta;const double distance=(p-projected).squaredNorm();
+      if(distance<best){best=distance;height=projected.z();}
+    }
+    p.z()=height;return best;
+  };
+  const auto clear=[&](const Velocity &candidate){
+    if(std::hypot(candidate.x,candidate.y)>1e-9){Point origin=a;if(terrain(origin)>.25*.25)return false;}
+    const auto sweep=brakingSweep(candidate,braking_deceleration_,yaw_braking_deceleration_);
+    Point previous=a;double previous_yaw=yaw;
+    for(size_t i=1;i<sweep.size();++i){
+      if(guardWall()-begin>.07){collision_check_expired_=true;return false;}
+      const auto &sample=sweep[i];
+      Point next=a+Point(std::cos(yaw)*sample.point.x()-std::sin(yaw)*sample.point.y(),
+                         std::sin(yaw)*sample.point.x()+std::cos(yaw)*sample.point.y(),0);
+      next.z()=previous.z();if(sample.point.head<2>().norm()>1e-9)terrain(next);
+      const double next_yaw=yaw+sample.yaw;
+      if(!graph_->motionClear(previous,next,previous_yaw,next_yaw))return false;
+      for(const auto &p:route_->obstacles)
+        if(c.body_length>0?
+           bool(dog_terrain::sweptTurningBoxContact(previous,next,Point(p.x,p.y,p.z),previous_yaw,next_yaw,
+             c.body_length*.5+padding,c.body_width*.5+padding,.12-.05,c.body_top+.12+.05)):
+           bool(dog_terrain::sweptCylinderContact(previous,next,Point(p.x,p.y,p.z),radius,.12-.05,c.body_top+.12+.05)))return false;
+      previous=next;previous_yaw=next_yaw;
+    }
+    return true;
+  };
+  if(!clear(v))return false;
+  // Check measured momentum independently, including when the desired
+  // translation has already reached zero or its turn direction has changed.
+  if(std::abs(v.x-measured_.x)>1e-6||std::abs(v.y-measured_.y)>1e-6||std::abs(v.yaw-measured_.yaw)>1e-6)
+    return clear(measured_);
   return true;
 }
 void VelocityGuard::tick() {
@@ -77,14 +74,18 @@ void VelocityGuard::tick() {
   input_.localization_ready =
       localization_ && localization_->ready(std::chrono::steady_clock::now());
   input_.route_ready = route_ && wall < route_deadline_ &&
-                       route_->generation == last_command_.route_generation;
+                       (route_->generation == last_command_.route_generation||
+                        (wall<handoff_deadline_&&last_command_.route_generation==handoff_generation_));
   auto result = arbiter_.update(input_, wall);
+  if(result.owner=="autonomous"&&(wall-executor_limits_at_>.3||executor_limits_task_!=last_command_.task_id)){
+    result.command={};result.owner="none";result.reason="executor_motion_limits_stale";
+  }
   try {
-    if (result.owner == "autonomous" && speed(result.command) > 1e-9 &&
+    if (result.owner == "autonomous" && (speed(result.command) > 1e-9||speed(measured_)>.025) &&
         !collisionFree(result.command)) {
       result.command = {};
       result.owner = "none";
-      result.reason = "braking_or_footprint_collision";
+      result.reason = collision_check_expired_?"safety_processing_or_command_expired":"braking_or_footprint_collision";
     }
   } catch (const std::exception &) {
     result.command = {};
@@ -107,6 +108,10 @@ void VelocityGuard::tick() {
       dog_terrain::Json({{"owner", result.owner},
                          {"reason", result.reason},
                          {"auto_enabled", auto_enabled_},
+                         {"max_linear_speed",input_.autonomous_limits.x},
+                         {"max_yaw_rate",input_.autonomous_limits.yaw},
+                         {"braking_deceleration",braking_deceleration_},
+                         {"yaw_braking_deceleration",yaw_braking_deceleration_},
                          {"estop", input_.estop},
                          {"task_id", input_.task_id},
                          {"map_revision", revision_},

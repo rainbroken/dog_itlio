@@ -1,6 +1,7 @@
 #include "dog_navigation/obstacle_memory.hpp"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <unordered_set>
 #include "voxel_key_hash.hpp"
 #include <stdexcept>
@@ -51,9 +52,29 @@ void ObstacleMemory::update(const Point &sensor,const Points &returns,double sta
   free.reserve(std::min<size_t>(rays.size()*16,1u<<20));
   std::map<Key,Point> hits;
   for(const auto &[k,ray]:rays) {
-    const Point delta=ray.end-sensor;const double distance=delta.norm();
-    const int steps=std::max(1,int(std::ceil(distance/(options_.voxel*.5))));
-    for(int i=0;i<steps;++i) free.insert(key(sensor+delta*(double(i)/steps)));
+    const Point delta=ray.end-sensor;
+    // Traverse every voxel intersected by the free part of the ray. Fixed
+    // half-voxel samples can skip short intersections near a voxel corner,
+    // leaving a removed obstacle permanently occupied across repeated scans.
+    Key cell=key(sensor);
+    Point crossing=Point::Constant(std::numeric_limits<double>::infinity());
+    Point increment=crossing;Eigen::Vector3i direction=Eigen::Vector3i::Zero();
+    for(int axis=0;axis<3;++axis)if(std::abs(delta[axis])>1e-12){
+      direction[axis]=delta[axis]>0?1:-1;
+      const double boundary=(cell[axis]+(direction[axis]>0?1:0))*options_.voxel;
+      crossing[axis]=(boundary-sensor[axis])/delta[axis];
+      increment[axis]=options_.voxel/std::abs(delta[axis]);
+    }
+    while(cell!=k){
+      free.insert(cell);
+      const double next=crossing.minCoeff();
+      if(!std::isfinite(next)||next>1.+1e-12)break;
+      // Simultaneous crossings touch the intervening side cells only at an
+      // edge/corner; they do not constitute observed free volume.
+      for(int axis=0;axis<3;++axis)if(crossing[axis]<=next+1e-12){
+        cell[axis]+=direction[axis];crossing[axis]+=increment[axis];
+      }
+    }
     if(ray.hit) hits.insert_or_assign(k,ray.end);
   }
   auto next=cells_;

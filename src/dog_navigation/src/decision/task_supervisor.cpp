@@ -76,6 +76,11 @@ bool TaskSupervisor::retryDue(double now) {
   if (!active() || paused() || retries_ >= unsigned(options_.max_retries) ||
       now - last_retry_ < options_.retry_interval)
     return false;
+  // A single short route-lease gap must not republish the goal and reset a
+  // planner that is already recovering. Walk/localization requests can still
+  // be immediate; route retries require a continuously blocked interval.
+  if(state_=="waiting_route"&&blocked_since_>=0&&now-blocked_since_<options_.retry_interval)
+    return false;
   ++retries_;
   last_retry_ = now;
   return true;

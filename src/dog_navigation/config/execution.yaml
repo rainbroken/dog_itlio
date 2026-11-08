@@ -3,10 +3,10 @@
 navigation_executor:
   ros__parameters:
     enabled: false
-    base_ground_offset: 0.65
+    base_ground_offset: 0.40
 velocity_guard:
   ros__parameters:
     guard_frequency: 50.0      # Hz：独立安全检查与速度输出，周期须小于 0.15 s
     allow_autonomous: false
-    calibration_confirmed: false
-    base_ground_offset: 0.65
+    calibration_confirmed: true
+    base_ground_offset: 0.40

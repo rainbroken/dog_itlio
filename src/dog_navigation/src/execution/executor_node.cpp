@@ -1,4 +1,5 @@
 #include "executor_node.hpp"
+#include "dog_navigation/navigation_motion_settings.hpp"
 #include <iomanip>
 #include <sstream>
 
@@ -10,7 +11,7 @@ double monotonicSeconds() {
 }
 void NavigationExecutor::configure() {
   enabled_ = declare_parameter<bool>("enabled", false);
-  ground_offset_ = declare_parameter<double>("base_ground_offset", .65);
+  ground_offset_ = declare_parameter<double>("base_ground_offset", .40);
   auto param = [this](const char *key, double &value) {
     value = declare_parameter<double>(key, value);
   };
@@ -24,13 +25,18 @@ void NavigationExecutor::configure() {
   param("yaw_rate", options_.yaw_rate);
   param("yaw_acceleration", options_.yaw_acceleration);
   param("stair_yaw_rate", options_.stair_yaw_rate);
+  param("startup_linear_speed",options_.startup_linear_speed);
+  param("startup_yaw_rate",options_.startup_yaw_rate);
   param("goal_xy_tolerance", options_.goal_xy);
   param("goal_z_tolerance", options_.goal_z);
   param("max_tracking_error", options_.max_tracking_error);
+  param("lookahead_distance", options_.lookahead_distance);
+  param("continuous_turn_angle", options_.continuous_turn_angle);
   DecisionOptions decision;
   param("recovery_timeout", decision.recovery_timeout);
   param("progress_timeout", decision.progress_timeout);
   param("retry_interval", decision.retry_interval);
+  retry_interval_=decision.retry_interval;
   decision.max_retries = declare_parameter<int>("max_retries", decision.max_retries);
   supervisor_ = TaskSupervisor(decision);
   options_.validate();
@@ -38,6 +44,10 @@ void NavigationExecutor::configure() {
     throw std::invalid_argument("Invalid calibrated body offset");
   const auto root = canonicalMapPath(
       declare_parameter<std::string>("map_root", "~/.local/share/dog/maps"));
+  options_=NavigationMotionSettings(root/".navigation-motion.json").load(options_);
+  options_.validate();
+  for(const auto *key:NavigationMotionSettings::keys)
+    set_parameter(rclcpp::Parameter(key,NavigationMotionSettings::values(options_).at(key).get<double>()));
   const auto id = declare_parameter<std::string>("map_id", "full_map");
   project_ = std::filesystem::weakly_canonical(dog_terrain::mapPath(root, id))
                  .string();
@@ -97,6 +107,7 @@ NavigationExecutor::NavigationExecutor() : Node("navigation_executor") {
         try {
           const auto j = dog_terrain::Json::parse(m->data);
           guard_reason_ = j.value("reason", "");
+          if(handle_&&guard_reason_!="permitted"&&guard_reason_!="autonomous_command_expired")last_guard_block_reason_=guard_reason_;
           guard_task_id_ = j.value("task_id", "");
           guard_auto_enabled_ = j.value("auto_enabled", false);
           guard_at_ = monotonicSeconds();
@@ -109,6 +120,10 @@ NavigationExecutor::NavigationExecutor() : Node("navigation_executor") {
       [this](const rclcpp_action::GoalUUID &,
              std::shared_ptr<const Action::Goal> g) {
         const auto &p = g->goal.pose.position;
+        // Web goals carry their creation stamp. A submission already in
+        // flight when cancel is handled must not become a new active task.
+        const auto stamp=rclcpp::Time(g->goal.header.stamp).nanoseconds();
+        if(stamp>0&&stamp<=cancelled_before_ns_)return rclcpp_action::GoalResponse::REJECT;
         Eigen::Quaterniond q(
             g->goal.pose.orientation.w, g->goal.pose.orientation.x,
             g->goal.pose.orientation.y, g->goal.pose.orientation.z);
@@ -129,7 +144,11 @@ NavigationExecutor::NavigationExecutor() : Node("navigation_executor") {
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
       },
       [this](std::shared_ptr<Handle>) {
+        cancelled_before_ns_=now().nanoseconds();
         supervisor_.cancel();
+        tracker_->stop();route_.reset();route_deadline_=0;
+        TrackResult stopped;stopped.phase="cancelled";stopped.reason="cancelled_by_user";
+        publishCommand(stopped,false);publishState(stopped);
         return rclcpp_action::CancelResponse::ACCEPT;
       },
       [this](const std::shared_ptr<Handle> h) {
@@ -140,11 +159,13 @@ NavigationExecutor::NavigationExecutor() : Node("navigation_executor") {
         for (auto b : h->get_goal_id())
           id << std::hex << std::setw(2) << std::setfill('0') << unsigned(b);
         task_id_ = id.str();
+        last_block_reason_.clear();last_guard_block_reason_.clear();
         tracker_ = std::make_unique<PathTracker>(options_);
         correction_.reset();
         supervisor_.start(monotonicSeconds());
         route_.reset();
         accepted_generation_ = 0;
+        installed_ids_.clear();
         submitPlannerGoal();
       });
   pause_ = create_service<std_srvs::srv::Trigger>(
@@ -169,9 +190,10 @@ NavigationExecutor::NavigationExecutor() : Node("navigation_executor") {
   cancel_ = create_service<std_srvs::srv::Trigger>(
       "~/cancel", [this](std::shared_ptr<std_srvs::srv::Trigger::Request>,
                          std::shared_ptr<std_srvs::srv::Trigger::Response> r) {
-        r->success = bool(handle_);
-        if (handle_)
-          supervisor_.cancel();
+        cancelled_before_ns_=now().nanoseconds();
+        supervisor_.cancel();
+        finish(false,"cancelled_by_user",true);
+        r->success=true;r->message="Task cancelled; motion permit revoked and planner cancellation requested";
       });
   last_tick_ = monotonicSeconds();
   timer_ = create_wall_timer(std::chrono::duration<double>(1. / controller_frequency_), [this] { tick(); });

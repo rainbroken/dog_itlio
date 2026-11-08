@@ -74,6 +74,35 @@ TEST_F(RobotBridgeTest, ModelTelemetryUsesFreshNamedJointsAndBodyOrientation) {
   EXPECT_TRUE(bridge->telemetry()["body_orientation"].is_null());
   EXPECT_TRUE(bridge->modelTelemetry()["joints"].is_null());
 }
+TEST_F(RobotBridgeTest, ExecutionPathsRequireMatchingMapStampAndLiveLease) {
+  auto state=mock->create_publisher<std_msgs::msg::String>("/navigation_executor/status",rclcpp::QoS(1).transient_local());
+  auto planner=mock->create_publisher<std_msgs::msg::String>("/local_navigation/status",rclcpp::QoS(1).transient_local());
+  auto global=mock->create_publisher<nav_msgs::msg::Path>("/local_navigation/global_path",1);
+  auto local=mock->create_publisher<nav_msgs::msg::Path>("/local_navigation/local_path",1);
+  ASSERT_TRUE(until([&]{return state->get_subscription_count()&&planner->get_subscription_count()&&global->get_subscription_count()&&local->get_subscription_count();}));
+  auto publish=[&](const std::string &revision,int goal=10){
+    nav_msgs::msg::Path path;path.header.frame_id="map";path.header.stamp=mock->now();
+    geometry_msgs::msg::PoseStamped p;p.pose.position.z=.12;path.poses={p,p,p};global->publish(path);
+    path.poses.resize(2);local->publish(path);
+    state->publish(std_msgs::msg::String().set__data(Json({{"task_id","task-a"},{"map_project","/maps/scene"},{"map_revision","r"},
+      {"planner_goal_stamp",{{"sec",10},{"nanosec",0}}}}).dump()));
+    planner->publish(std_msgs::msg::String().set__data(Json({{"map_project","/maps/scene"},{"map_revision",revision},
+      {"valid",true},{"state","route_ready"},{"valid_for_seconds",.5},
+      {"goal_stamp",{{"sec",goal},{"nanosec",0}}},
+      {"route_stamp",{{"sec",path.header.stamp.sec},{"nanosec",path.header.stamp.nanosec}}}}).dump()));
+  };
+  // Separate DDS topics may advance between snapshots. Inspect the exact
+  // coherent snapshot that satisfied the predicate, not the next refresh.
+  Json paths;
+  ASSERT_TRUE(until([&]{publish("r");paths=bridge->navigationPaths();return paths["valid"].get<bool>();}));
+  EXPECT_EQ(paths["global_path"].size(),3u);EXPECT_EQ(paths["local_path"].size(),2u);
+  EXPECT_DOUBLE_EQ(paths["local_path"][0][2].get<double>(),.12);
+  ASSERT_TRUE(until([&]{publish("wrong");return bridge->navigationPaths()["reason"]=="map_mismatch";}));
+  ASSERT_TRUE(until([&]{publish("r",11);return bridge->navigationPaths()["reason"]=="goal_mismatch";}));
+  ASSERT_TRUE(until([&]{publish("r");return bridge->navigationPaths()["valid"].get<bool>();}));
+  std::this_thread::sleep_for(550ms);EXPECT_FALSE(bridge->navigationPaths()["valid"].get<bool>());
+  EXPECT_TRUE(bridge->navigationPaths()["local_path"].empty());
+}
 
 TEST_F(RobotBridgeTest, NavigationRequiresFreshReadinessAndExactMapIdentity) {
   using Action=dog_interfaces::action::NavigateTerrain;
@@ -104,6 +133,29 @@ TEST_F(RobotBridgeTest, NavigationRequiresFreshReadinessAndExactMapIdentity) {
   EXPECT_TRUE(until([&]{return accepted==1;}));
   std::this_thread::sleep_for(900ms);
   EXPECT_FALSE(bridge->telemetry()["navigation_ready"].get<bool>());
+}
+
+TEST_F(RobotBridgeTest, NavigationCancelStopsAndClearsLeaseEvenWithoutTaskServices){
+  // Cancellation must stop an active Web stream even if ROS task services fail.
+  ASSERT_TRUE(until([&]{return bridge->telemetry()["control_ready"].get<bool>();}));
+  const auto token=bridge->command("/api/control/acquire",Json::object()).at("token");
+  bridge->command("/api/control/velocity",{{"token",token},{"x",.2},{"y",0},{"yaw",0}});
+  ASSERT_TRUE(until([&]{return velocity.load()>.1;}));
+  const auto result=bridge->command("/api/navigation/cancel",Json::object());
+  EXPECT_FALSE(result["success"].get<bool>());
+  EXPECT_TRUE(until([&]{return velocity.load()==0.;}));
+  EXPECT_FALSE(bridge->telemetry()["control_claimed"].get<bool>());
+}
+
+TEST_F(RobotBridgeTest, NavigationCancelRequestsGuardExecutorAndPlannerWithoutMapReadiness){
+  std::atomic<int> count{0};
+  std::vector<rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> services;
+  for(const auto *path:{"/velocity_guard/cancel","/navigation_executor/cancel","/local_navigation/cancel"})
+    services.push_back(mock->create_service<std_srvs::srv::Trigger>(path,[&](std::shared_ptr<std_srvs::srv::Trigger::Request>,std::shared_ptr<std_srvs::srv::Trigger::Response> r){++count;r->success=true;}));
+  bool success=false;
+  ASSERT_TRUE(until([&]{success=bridge->command("/api/navigation/cancel",Json::object())["success"].get<bool>();return success;}));
+  EXPECT_GE(count.load(),3);
+  EXPECT_TRUE(bridge->command("/api/navigation/cancel",Json::object())["success"].get<bool>());
 }
 
 TEST_F(RobotBridgeTest, RequiresFreshRobotAndExclusiveLeaseAndStopsAfterTimeout) {

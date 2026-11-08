@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import {OrbitControls} from '/vendor/OrbitControls.js';
 import {proposedMapId, assertImportedMap} from '/import_state.js';
 import {mountLocalization} from './localization.js';
+import {loadMapPreview} from './map_preview.js';
+import {mountResources} from './resources.js';
+import {mountNavigationSettings} from './navigation_settings.js';
+import {localizationMapStatus,robotPlacement} from './robot_pose.js';
 import {createRobotModel} from './robot_model.js';
 import {mountMotionSettings} from './motion_settings.js';
 import {TeleopClient} from './teleop_client.js';
@@ -9,6 +13,7 @@ import {mountLiveClouds} from './cloud_view.js';
 import {mountMapLibrary} from './map_library.js';
 import {mountMapTaskNotice} from './map_task_notice.js';
 import {mountTerrainReview} from './terrain_review.js';
+import {navigationPathState,consumePathLease} from './navigation_paths.js';
 
 const $ = id => document.getElementById(id);
 // BPX MotionState telemetry values differ from SetMotion request constants.
@@ -29,12 +34,12 @@ function tell(message, error = false) {
   while ($('eventList').children.length > 50) $('eventList').lastChild.remove();
   $('eventCount').textContent = $('eventList').children.length;
 }
-async function api(path, body, raw = false) {
+async function api(path, body, raw = false, timeout = 120000) {
   for(let attempt=0;attempt<2;attempt++){
     const response = await fetch(path, {method: body === undefined ? 'GET' : 'POST',
       headers: body === undefined || raw ? {} : {'Content-Type': 'application/json'},
       body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
-      signal: AbortSignal.timeout(120000),cache:'no-store'});
+      signal: AbortSignal.timeout(timeout),cache:'no-store'});
     const content=await response.text();let result;
     try{result=JSON.parse(content);}
     catch{
@@ -78,15 +83,33 @@ const camera = new THREE.PerspectiveCamera(48, 1, .01, 5000); camera.up.set(0, 0
 const renderer = new THREE.WebGLRenderer({canvas: $('mapCanvas'), antialias: true});
 renderer.setPixelRatio(1); // Keep WebGL work bounded while mapping and driving.
 const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true;
+const pageViews=new Map(),scenePages=new Set(['overview','mapping','navigation','terrain']);
+const viewKey=page=>page==='mapping'?'mapping':'saved-map';
+function rememberView(page){
+  if(scenePages.has(page))pageViews.set(viewKey(page),{position:camera.position.clone(),target:controls.target.clone(),
+    zoom:camera.zoom,far:camera.far,view:state.view||'free'});
+}
+function restoreView(page){
+  const saved=pageViews.get(viewKey(page));if(!saved)return false;
+  const damping=controls.enableDamping;controls.enableDamping=false;controls.update();
+  camera.position.copy(saved.position);controls.target.copy(saved.target);camera.zoom=saved.zoom;camera.far=saved.far;
+  state.view=saved.view;camera.updateProjectionMatrix();controls.update();controls.enableDamping=damping;
+  $('views').querySelectorAll('button').forEach(button=>button.classList.toggle('active',button.dataset.view===saved.view));
+  return true;
+}
 const grid = new THREE.GridHelper(40, 80,palette.getPropertyValue('--grid-major').trim()||'#174b40',palette.getPropertyValue('--grid-minor').trim()||'#08251e'); grid.rotation.x = Math.PI / 2; grid.position.z = -.05; scene.add(grid);
 const groups = {};
-for (const name of ['cloud', 'surface', 'path', 'live', 'scan', 'markers']) { groups[name] = new THREE.Group(); scene.add(groups[name]); }
+for (const name of ['cloud', 'surface', 'path', 'live', 'scan', 'markers','executionGlobal','executionLocal']) { groups[name] = new THREE.Group(); scene.add(groups[name]); }
 groups.initial=new THREE.Group();scene.add(groups.initial);
 const localization=mountLocalization({api,tell,
-  pick:()=>{state.selection='initial_pose';tell('请点选机器人当前脚下的地面，再设置地图朝向。');},
+  pick:()=>{state.selection='initial_pose';$('mapCanvas').style.cursor='crosshair';tell('按住机器人脚下地面，拖向机头方向；松开后点击提交初值。');},
   preview:value=>{clear(groups.initial);if(!value)return;
     const arrow=new THREE.ArrowHelper(new THREE.Vector3(Math.cos(value.yaw),Math.sin(value.yaw),0),
-      new THREE.Vector3(...value.point).add(new THREE.Vector3(0,0,.12)),.7,'#bd9aff',.2,.12);
+      new THREE.Vector3(...value.point).add(new THREE.Vector3(0,0,.12)),1.1,'#bd9aff',.25,.16);
+    arrow.line.material.depthTest=arrow.cone.material.depthTest=false;
+    arrow.line.renderOrder=arrow.cone.renderOrder=40;
+    const anchor=new THREE.Mesh(new THREE.SphereGeometry(.12),new THREE.MeshBasicMaterial({color:'#bd9aff',depthTest:false}));
+    anchor.position.fromArray(value.point).z+=.12;anchor.renderOrder=40;groups.initial.add(anchor);
     groups.initial.add(arrow);
   }});
 scene.add(new THREE.HemisphereLight('#e7fff9','#15392f',2));
@@ -109,19 +132,99 @@ function updateRobotModel() {
   document.querySelector('[data-view="follow"]').disabled=!robot.userData.positioned;
 }
 const height = {value: 1e6};
+const wallEmphasis={value:1};
+try{wallEmphasis.value=localStorage.getItem('dog-web-wall-highlight')==='false'?0:1;}catch{}
+let wallWorker=null;
+function updateWallLegend(){
+  $('wallLegendItem').style.display=wallEmphasis.value?'flex':'none';
+  $('cloudLegend').textContent=wallEmphasis.value?'其他点云':'几何点云';
+  $('cloudLegendDot').style.background=wallEmphasis.value?'#718698':'#7db8aa';
+}
+updateWallLegend();
 function clear(group) {
   for (const child of [...group.children]) {child.geometry?.dispose(); child.material?.dispose(); group.remove(child);}
+}
+document.querySelector('.scene-legend').insertAdjacentHTML('beforeend',
+  '<span data-execution-legend hidden><i class="legend-line execution-global"></i>执行全局路径</span><span data-execution-legend hidden><i class="legend-line execution-local"></i>局部路径</span><span id="localPathStatus" role="status" hidden>局部路径：等待导航</span>');
+let pathLeaseTimer;
+const pathLegend=document.querySelector('.scene-legend');
+new ResizeObserver(()=>{
+  const bottom=parseFloat(getComputedStyle(pathLegend).bottom)||0;
+  const next=bottom+pathLegend.getBoundingClientRect().height+8;
+  const floor=document.querySelector('.floor-switch');floor.style.bottom=`${next}px`;
+  const status=document.querySelector('.robot-model-status');
+  if(status)status.style.bottom=`${next+floor.getBoundingClientRect().height+8}px`;
+}).observe(pathLegend);
+function renderNavigationPaths(data){
+  clearTimeout(pathLeaseTimer);
+  const result=navigationPathState(data,state.map,state.robot?.navigation);
+  if(state.navigationCancelling){result.valid=false;result.label='局部路径：正在取消导航';}
+  $('localPathStatus').textContent=result.label;
+  document.querySelectorAll('[data-execution-legend],#localPathStatus').forEach(e=>e.hidden=state.page!=='navigation');
+  const key=result.valid?`${state.map.revision}:${result.sequence}`:null;
+  if(key!==state.executionPathSequence||(!result.valid&&(groups.executionGlobal.children.length||groups.executionLocal.children.length))){
+    state.executionPathSequence=key;clear(groups.executionGlobal);clear(groups.executionLocal);
+    if(result.valid){
+      for(const [rows,group,color,offset] of [[result.global,groups.executionGlobal,'#1677ff',.06],[result.local,groups.executionLocal,'#20e882',.09]]){
+        const geometry=new THREE.BufferGeometry().setFromPoints(rows.map(p=>new THREE.Vector3(p[0],p[1],p[2]+offset)));
+        const line=new THREE.Line(geometry,new THREE.LineBasicMaterial({color,depthTest:false,transparent:true}));
+        line.renderOrder=group===groups.executionLocal?14:12;group.add(line);
+        if(group===groups.executionLocal){
+          const dots=new THREE.Points(geometry.clone(),new THREE.PointsMaterial({color,size:.045,depthTest:false,transparent:true}));
+          dots.renderOrder=15;group.add(dots);
+        }
+      }
+    }
+    refreshWorkspace();
+  }
+  if(result.valid)pathLeaseTimer=setTimeout(()=>renderNavigationPaths({valid:false,reason:'route_expired'}),Math.min(800,result.lease));
+}
+async function pollNavigationPaths(){
+  if(!document.hidden&&state.page==='navigation'){
+    const requestedAt=performance.now();
+    try{
+      const data=await api('/api/navigation/paths',undefined,false,1000);
+      renderNavigationPaths(consumePathLease(data,performance.now()-requestedAt));
+    }
+    catch{renderNavigationPaths({valid:false,reason:'ROS 路径接口不可用'});}
+  }else if(groups.executionLocal.children.length)renderNavigationPaths({valid:false});
+  setTimeout(pollNavigationPaths,100);
 }
 function points(rows, group, color, size) {
   clear(group);
   if (!rows.length) return;
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(rows.flatMap(p => p.slice(0, 3)), 3));
+  const positions=new Float32Array(rows.length*3);
+  for(let i=0;i<rows.length;i++)for(let j=0;j<3;j++)positions[i*3+j]=rows[i][j];
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   const material = new THREE.ShaderMaterial({transparent: true,
     uniforms: {clip: height, color: {value: new THREE.Color(color)}, size: {value: size}},
     vertexShader: 'varying float z; uniform float size; void main(){z=position.z; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); gl_PointSize=size;}',
     fragmentShader: 'varying float z; uniform float clip; uniform vec3 color; void main(){if(z>clip)discard;gl_FragColor=vec4(color,.8);}'});
   group.add(new THREE.Points(geometry, material));
+}
+function savedCloud(positions) {
+  if(!positions.length)return;
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));
+  geometry.setAttribute('wall',new THREE.Float32BufferAttribute(new Float32Array(positions.length/3),1));
+  const material=new THREE.ShaderMaterial({transparent:true,uniforms:{clip:height,wallEmphasis,
+    baseColor:{value:new THREE.Color('#718698')},plainColor:{value:new THREE.Color('#7db8aa')},wallColor:{value:new THREE.Color('#ff9955')}},
+    vertexShader:'attribute float wall;uniform float wallEmphasis;varying float mark;varying float z;void main(){mark=wall*wallEmphasis;z=position.z;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);gl_PointSize=mix(2.,3.5,mark);}',
+    fragmentShader:'uniform float clip;uniform float wallEmphasis;uniform vec3 baseColor;uniform vec3 plainColor;uniform vec3 wallColor;varying float mark;varying float z;void main(){if(z>clip||distance(gl_PointCoord,vec2(.5))>.5)discard;vec3 base=mix(plainColor,baseColor,wallEmphasis);gl_FragColor=vec4(mix(base,wallColor,mark),mix(mix(.8,.5,wallEmphasis),1.,mark));}'});
+  groups.cloud.add(new THREE.Points(geometry,material));
+  const legend=$('wallLegend');legend.textContent='墙面候选 · 识别中';
+  // Classification runs away from rendering, polling and teleoperation input.
+  const worker=new Worker(new URL('./wall_worker.js',import.meta.url),{type:'module'});wallWorker=worker;
+  worker.onmessage=event=>{
+    if(wallWorker!==worker)return;
+    const flags=event.data;
+    geometry.setAttribute('wall',new THREE.Float32BufferAttribute(flags,1));
+    legend.textContent='墙面候选';legend.dataset.count=String(flags.reduce((n,v)=>n+v,0));
+    worker.terminate();wallWorker=null;
+  };
+  worker.onerror=()=>{if(wallWorker===worker){legend.textContent='墙面高亮不可用';worker.terminate();wallWorker=null;}};
+  const input=positions.slice();worker.postMessage(input,[input.buffer]);
 }
 function drawSurfaces(region = null) {
   const rows = state.map?.surfaces || [];
@@ -145,8 +248,8 @@ function updateOverview() {
   $('overviewMap').textContent = state.map?.display_name || state.map?.map_id || '未加载地图';
   $('overviewRevision').textContent = state.map ? `版本 ${state.map.revision.slice(0,8)} · ${Number(state.map.points).toLocaleString()} 点` : '先选择地图项目';
   const loc = state.robot?.localization;
-  const sameMap = state.map && loc?.map_path?.replace(/\/(?:localization|cloud)\.pcd$/,'').split('/').at(-1) === state.map.map_id;
-  $('overviewLocalization').textContent = !state.map ? '待加载地图' : !loc?.fresh ? '定位状态未就绪' : !sameMap ? '定位地图不一致' : loc.valid ? '定位有效' : '待定位确认';
+  const status = localizationMapStatus(loc,state.map);
+  $('overviewLocalization').textContent = status.state==='ready' ? '定位有效' : status.reason;
   $('overviewRoute').textContent = state.ascent == null ? '尚未规划' : $('routeLength').textContent;
   $('overviewTerrain').textContent = state.map ? `${state.map.components} 个连通区域` : '等待地图';
 }
@@ -157,8 +260,16 @@ function fit(bounds) {
   controls.target.copy(center); camera.position.copy(center).add(new THREE.Vector3(.8, -1.1, .8).multiplyScalar(size));
   camera.far = Math.max(100, size * 20); camera.updateProjectionMatrix(); controls.update();
 }
-function clearRoute() { state.epoch++; state.ascent = null; clear(groups.path); $('routeLength').textContent = '—'; $('taskBadge').textContent = '待规划'; }
+function clearRoute() { state.epoch++; state.ascent = null; state.routeReady=false;state.routeLive=false;state.routePose=null;state.routeSubmitted=false;state.navigationStartError='';clear(groups.path); $('routeLength').textContent = '—'; $('taskBadge').textContent = '待规划'; }
+function liveStartAvailable(){
+  const nav=state.robot?.navigation,p=robotPlacement(state.robot,state.map,{page:'navigation'}).pose;
+  return !!(p&&p.age_ms>=-50&&p.age_ms<=300&&nav?.fresh&&nav.map_revision===state.map?.revision&&Number.isFinite(nav.base_ground_offset));
+}
 function clearMap() {
+  clear(groups.executionGlobal);clear(groups.executionLocal);state.executionPathSequence=null;
+  pageViews.delete('saved-map');
+  wallWorker?.terminate();wallWorker=null;
+  $('wallLegend').textContent='墙面候选';delete $('wallLegend').dataset.count;
   clearRoute(); clear(groups.cloud); clear(groups.surface); clear(groups.markers);
   state.map = state.start = state.goal = null;
   $('startCoordinates').textContent = '未选择起点';
@@ -187,6 +298,9 @@ function refreshWorkspace() {
   if (!mapping) groups.cloud.visible = document.querySelector('[data-layer="cloud"]').checked && document.querySelector('[data-render="cloud"]').classList.contains('active');
   if (state.page !== 'navigation') {groups.markers.visible = false;groups.initial.visible = false;}
   if (state.page === 'terrain') {groups.cloud.visible = false;groups.surface.visible = true;groups.path.visible = false;}
+  const showPaths=state.page==='navigation'&&(document.querySelector('[data-layer="path"]')?.checked??true);
+  groups.executionGlobal.visible=groups.executionLocal.visible=showPaths;
+  if(showPaths&&groups.executionGlobal.children.length)groups.path.visible=false;
   text('.scene-caption .mini-label', mapping ? 'LIVE LIDAR / IMU' : 'SAVED MAP / ROUTE REVIEW');
   text('.scene-badge', mapping ? '实时采集 · odom / map' : state.map ? `${state.map.map_id} / ${state.map.revision.slice(0,8)}` : '未加载地图');
   text('.scene-caption strong', mapping ? '等待累计建图点云' : state.map?.display_name || state.map?.map_id || '从地图管理加载已有几何地图');
@@ -197,10 +311,10 @@ function refreshWorkspace() {
   updateOverview();
 }
 async function displayMap(expected) {
-  const map = await api('/api/map'); assertImportedMap(map, expected); clearMap(); state.map = map;
+  const map = await loadMapPreview(); assertImportedMap(map, expected); clearMap(); state.map = map;
   localization.update(state.robot,map);
   updateRobotModel();
-  points(map.cloud, groups.cloud, '#7db8aa', 2); drawSurfaces();
+  savedCloud(map.cloudPositions); drawSurfaces();
   text('.scene-badge', `${map.map_id} / ${map.revision.slice(0, 8)}`);
   text('.scene-caption strong', map.display_name || map.source?.filename || map.map_id);
   text('.sidebar-note strong', map.display_name || map.map_id);
@@ -208,7 +322,7 @@ async function displayMap(expected) {
   [map.points, map.valid_surfaces, map.components, '—'].forEach((v, i) => metrics[i].textContent = v);
   const slider = $('heightClip'); slider.min = map.bounds[0][2] - .1; slider.max = map.bounds[1][2] + .1;
   slider.value = slider.max; slider.oninput(); fit(map.bounds);
-  state.selection = 'start';
+  state.selection = liveStartAvailable()?'goal':'start';
   refreshWorkspace();
   return map;
 }
@@ -226,18 +340,25 @@ async function job(operation,title='正在加载地图') {
       if (result.state === 'complete') {
         mapTask.loading();
         const map=await displayMap(result);
-        mapTask.complete(map);tell(`地图 ${map.map_id} 已加载完成，请选择规划起点。`);break;
+        mapTask.complete(map);tell(`地图 ${map.map_id} 已加载完成，${liveStartAvailable()?'请选择终点':'可手选起终点进行预览'}。`);break;
       }
-      await new Promise(r => setTimeout(r, 700));
+      await new Promise(r => setTimeout(r, 150));
     }
   } catch(error) {mapTask.fail(error);throw error;}
   finally { state.busy = false;updateMapActions(); }
 }
 async function plan() {
   if (state.page !== 'navigation') throw new Error('请在定位与导航页面设置起终点并规划');
-  if (!state.map || !state.start || !state.goal) throw new Error('请先加载地图并选择起点和目标');
+  const live=liveStartAvailable();
+  if (!state.map || (!live&&!state.start) || !state.goal) throw new Error(live?'请先选择终点':'请先确认定位，或手选起终点进行离线预览');
   clearRoute(); const epoch = state.epoch;
-  const result = await api('/api/plan', {map_id: state.map.map_id, revision: state.map.revision, start: state.start, goal: state.goal});
+  updateTelemetry(state.robot);
+  const pose=live?state.robot.pose.position.slice():null;
+  let result;
+  try{
+    result = await api('/api/plan', {map_id: state.map.map_id, revision: state.map.revision,
+      ...(live?{use_robot_start:true}:{start:state.start}),goal:state.goal});
+  }catch(error){if(epoch!==state.epoch)return;throw error;}
   if (epoch !== state.epoch) return;
   for (const section of result.sections) {
     const geometry = new THREE.BufferGeometry().setFromPoints(result.points.slice(section.start_index, section.end_index + 1).map(p => new THREE.Vector3(p[0], p[1], p[2] + .05)));
@@ -246,25 +367,60 @@ async function plan() {
   }
   state.start = result.points[0]; state.goal = result.points.at(-1); markers();
   state.ascent = result.ascent;
-  $('routeLength').textContent = `${result.length.toFixed(2)} m`; $('taskBadge').textContent = '规划完成 · 仅预览';
+  state.routeLive=live&&result.start_source==='localization';state.routeReady=true;state.routePose=pose;
+  $('routeLength').textContent = `${result.length.toFixed(2)} m`; $('taskBadge').textContent = state.routeLive?'路线就绪 · 待确认':'规划完成 · 仅预览';
   document.querySelectorAll('.scene-metrics strong')[3].textContent = `${result.ascent.toFixed(2)} m`;
-  tell(`规划完成：${result.sections.filter(s => s.mode === 'stairs').length} 段台阶候选；未发送运动指令。`);
+  tell(state.routeLive?'路线已生成，请检查后点击“确认并导航”':'离线路线预览已生成；执行需要有效定位');
   refreshWorkspace();
+  updateTelemetry(state.robot);
 }
 const raycaster = new THREE.Raycaster(); raycaster.params.Points.threshold = .12;
-let down;
+let down,poseDrag=null;
+function surfaceHit(event){
+  const rect=$('mapCanvas').getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1),camera);
+  return raycaster.intersectObjects(groups.surface.children).find(h=>state.map.surfaces[h.index][2]<=height.value);
+}
+function endPoseDrag(){
+  if(poseDrag&&$('mapCanvas').hasPointerCapture(poseDrag.id))$('mapCanvas').releasePointerCapture(poseDrag.id);
+  poseDrag=null;controls.enabled=true;$('mapCanvas').style.cursor='';
+}
+function rotatePose(event){
+  if(!poseDrag||poseDrag.id!==event.pointerId)return;
+  const rect=$('mapCanvas').getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1),camera);
+  const target=raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,0,1),-poseDrag.point[2]),new THREE.Vector3());
+  if(!target||Math.hypot(event.clientX-poseDrag.x,event.clientY-poseDrag.y)<5)return;
+  const dx=target.x-poseDrag.point[0],dy=target.y-poseDrag.point[1];
+  if(Math.hypot(dx,dy)>.05)localization.choose(poseDrag.point,Math.atan2(dy,dx));
+}
+// Capture initial-pose gestures before OrbitControls can rotate the camera.
+$('mapCanvas').addEventListener('pointerdown',event=>{
+  if(state.page!=='navigation'||state.selection!=='initial_pose'||event.button!==0||state.busy||!state.map)return;
+  event.stopImmediatePropagation();event.preventDefault();
+  const hit=surfaceHit(event);if(!hit){tell('请按住可见的可通行地表节点');return;}
+  const point=state.map.surfaces[hit.index].slice(0,3);
+  poseDrag={point,id:event.pointerId,x:event.clientX,y:event.clientY};
+  controls.enabled=false;$('mapCanvas').setPointerCapture(event.pointerId);localization.choose(point);
+},{capture:true});
+$('mapCanvas').addEventListener('pointermove',rotatePose);
+$('mapCanvas').addEventListener('pointercancel',()=>{if(poseDrag)endPoseDrag();});
+$('mapCanvas').addEventListener('lostpointercapture',()=>{if(poseDrag)endPoseDrag();});
+window.addEventListener('keydown',event=>{if(event.key==='Escape'&&state.selection==='initial_pose'){endPoseDrag();state.selection=null;}});
 $('mapCanvas').addEventListener('pointerdown', e => down = [e.clientX, e.clientY, e.button]);
 $('mapCanvas').addEventListener('pointerup', e => {
+  if(poseDrag&&poseDrag.id===e.pointerId){rotatePose(e);endPoseDrag();state.selection=null;down=null;return;}
   if (state.page !== 'navigation' || !down || down[2] !== 0 || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5 || !state.selection || state.busy || !state.map) return;
-  const rect = $('mapCanvas').getBoundingClientRect();
-  raycaster.setFromCamera(new THREE.Vector2((e.clientX - rect.left) / rect.width * 2 - 1, -(e.clientY - rect.top) / rect.height * 2 + 1), camera);
-  const hit = raycaster.intersectObjects(groups.surface.children).find(h => state.map.surfaces[h.index][2] <= height.value);
+  const hit = surfaceHit(e);
   if (!hit) return tell('请点击可见的可通行地表节点');
   if(state.selection==='initial_pose') {
     localization.choose(state.map.surfaces[hit.index].slice(0,3));state.selection=null;return;
   }
+  if(liveStartAvailable()){
+    clearRoute();state.goal=state.map.surfaces[hit.index].slice(0,3);state.selection='goal';markers();action(plan)();return;
+  }
   clearRoute(); state[state.selection] = state.map.surfaces[hit.index].slice(0, 3);
-  state.selection = state.selection === 'start' ? 'goal' : null; markers();
+  state.selection = 'goal'; markers();
   if (state.start && state.goal) action(plan)();
 });
 new ResizeObserver(() => {
@@ -309,22 +465,32 @@ $('renderModes').onclick = e => {
   groups.cloud.visible = b.dataset.render === 'cloud'; groups.surface.visible = true;
   refreshWorkspace();
 };
-$('pickGoal').onclick = () => {state.selection = state.start ? 'goal' : 'start'; tell(`请在地表选择${state.selection === 'start' ? '起点' : '目标'}；地图坐标未与实时会话配准时只可手选。`);};
+$('pickGoal').onclick = () => {state.selection = liveStartAvailable()||state.start ? 'goal' : 'start'; tell(liveStartAvailable()?'请选择终点，起点使用当前定位':`请在地表选择${state.selection==='start'?'起点':'终点'}，当前为离线预览`);};
 $('pickStart').onclick = () => {state.selection = 'start'; clearRoute(); tell('请在当前地图的可通行地表重新选择起点');};
 $('plan').onclick = action(plan);
 $('execute').onclick = action(async () => {
-  if(!state.map||!state.goal)throw new Error('请先加载地图并选择目标');
-  const result=await api('/api/navigation/start',{map_id:state.map.map_id,revision:state.map.revision,goal:state.goal});
-  tell(result.message,!result.success);
+  if(!state.map||!state.goal||!state.routeReady||!state.routeLive||!liveStartAvailable())throw new Error('请先使用当前定位规划路线，再确认导航');
+  if(state.navigationSubmitting)return;
+  state.navigationSubmitting=true;updateTelemetry(state.robot);
+  const submissionEpoch=state.epoch;
+  try{
+    const result=await api('/api/navigation/start',{map_id:state.map.map_id,revision:state.map.revision,goal:state.goal});
+    if(submissionEpoch===state.epoch){state.routeSubmitted=!!result.success;state.navigationStartError=result.success?'':result.message;tell(result.message,!result.success);}
+  }catch(error){if(submissionEpoch===state.epoch)state.navigationStartError=error.message;throw error;
+  }finally{state.navigationSubmitting=false;updateTelemetry(await api('/api/robot'));}
 });
 $('pause').onclick = action(async () => {
   const paused=state.robot?.navigation?.task_state==='paused';
   const result=await api(`/api/navigation/${paused?'resume':'pause'}`,{});tell(result.message||'任务状态已更新',!result.success);
 });
 $('cancel').onclick = action(async () => {
-  if(['waiting_inputs','following','paused','relocalizing','waiting_route','waiting_walk_state'].includes(state.robot?.navigation?.task_state)) {
-    const result=await api('/api/navigation/cancel',{});tell(result.message||'已请求取消',!result.success);
-  } else clearRoute();
+  if(state.navigationCancelling)return;
+  state.navigationCancelling=true;clearRoute();updateTelemetry(state.robot);
+  try{
+    const released=release();
+    if(state.robot?.ros){const result=await api('/api/navigation/cancel',{});tell(result.message||'已请求停车并取消任务',!result.success);}
+    await released;
+  }finally{state.navigationCancelling=false;updateTelemetry(await api('/api/robot'));}
 });
 
 const teleop = new TeleopClient({
@@ -357,6 +523,15 @@ function controlPanel() {
   document.addEventListener('keydown', e => {
     const editing = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
     if (e.key === 'Escape' || (e.code === 'Space' && !editing)) {e.preventDefault(); release(); return;}
+    const key={KeyW:'w',KeyS:'s',KeyA:'a',KeyD:'d',KeyQ:'q',KeyE:'e'}[e.code];
+    if(!key||editing||document.querySelector('dialog[open]'))return;
+    e.preventDefault();
+    if(!state.robot?.control_ready){if(!e.repeat)tell('手动控制未就绪，请检查机器人连接',true);return;}
+    if(e.repeat)return;
+    teleop.press(`keyboard:${e.code}`,key);
+  });
+  document.addEventListener('keyup',e=>{
+    if(['KeyW','KeyS','KeyA','KeyD','KeyQ','KeyE'].includes(e.code))teleop.lift(`keyboard:${e.code}`);
   });
   document.addEventListener('focusin', e => {
     if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName) || e.target.isContentEditable) release();
@@ -367,10 +542,13 @@ const liveClouds=mountLiveClouds({groups,clip:height,getState:()=>state,fit,text
 liveClouds.start();
 
 function switchPage(key) {
+  rememberView(state.page);
+  endPoseDrag();if(state.selection==='initial_pose')state.selection=null;
   release(); state.page = key;
   document.querySelectorAll('[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === key));
   document.querySelectorAll('[data-page]').forEach(b => b.dataset.page === key ? b.setAttribute('aria-current','page') : b.removeAttribute('aria-current'));
-  const content = ['maps','settings','diagnostics'].includes(key);
+  const content = ['maps','settings','diagnostics','resources'].includes(key);
+  $('contentPage').classList.toggle('settings-layout',key==='settings');
   $('sceneWorkspace').hidden = content; $('contentPage').hidden = !content;
   $('workspacePurpose').hidden = content;
   $('mainWorkspace').dataset.page = key;
@@ -381,7 +559,7 @@ function switchPage(key) {
   const purposes = {
     overview:['MISSION OVERVIEW','查看当前地图、定位与路线状态，从总览进入各项任务。','打开地图管理 ↗','maps','全景地图'],
     mapping:['01 CAPTURE → 02 SAVE → 03 BUILD','采集 LiDAR–IMU 几何点云，保存后在地图管理生成导航图。','查看已保存 PCD ↗','maps','实时几何采集'],
-    navigation:['01 LOCALIZE → 02 TARGET → 03 PLAN','预览可手选起点；执行使用实时定位，并要求标定与安全仲裁就绪。','选择导航地图 ↗','maps','定位与路线'],
+    navigation:['01 LOCALIZE → 02 TARGET → 03 CONFIRM','定位有效后直接选择终点，预览路线并确认导航。','选择导航地图 ↗','maps','定位与路线'],
     terrain:['SURFACE CONNECTIVITY / HEIGHT','按连通区域检查三维地表与高度分布，核对当前地图构建约束。','进入路线验证 ↗','navigation','连通区域 · 颜色区分'],
   };
   const purpose = purposes[key] || ['','','','maps',''];
@@ -392,7 +570,7 @@ function switchPage(key) {
   document.querySelector('.task-card').hidden = key !== 'navigation';
   document.querySelector('.localization-card').hidden = key !== 'navigation';
   $('overviewSummary').hidden = key !== 'overview';
-  $('taskTitle').textContent = '02 / 起终点与路线';
+  $('taskTitle').textContent = '02 / 选择终点与确认路线';
   $('liveScanCard').hidden = !mapping;
   $('renderModes').hidden = mapping || key === 'terrain';
   for (const input of document.querySelectorAll('[data-layer="surface"], [data-layer="path"]')) input.closest('label').hidden = mapping;
@@ -405,7 +583,7 @@ function switchPage(key) {
   refreshWorkspace();
   drawSurfaces();
   height.value = mapping ? 1e6 : Number($('heightClip').value);
-  if (!content) $('resetView').click();
+  if (!content&&!restoreView(key)) {state.view='free';$('views').querySelectorAll('button').forEach(button=>button.classList.toggle('active',button.dataset.view==='free'));$('resetView').click();}
   $('modeCard').hidden = !['mapping','terrain'].includes(key);
   if (key === 'mapping') {
     $('modeCard').innerHTML = '<div class="card-heading"><h2>采集会话</h2><span class="pill">纯 LIO</span></div><p id="mappingState">等待会话状态</p><div class="mapping-stage"><small>01 / 采集</small><p>确认 LiDAR 与 IMU 数据新鲜后启动。</p><div class="action-row"><button class="button primary" id="mappingStart">启动建图</button><button class="button" id="mappingStop">结束建图</button></div></div><div class="mapping-stage"><small>02 / 保存几何地图</small><p>保存 PCD 后，在地图管理中生成导航图。</p><button class="button" id="saveMap">保存几何 PCD</button></div><p class="settings-note">需要已有 MID-360 驱动输入。结束只管理网页启动的会话。此页只显示实时采集，不叠加已保存地图或规划路线；切回工作台保留原地图与起终点。</p>';
@@ -421,11 +599,20 @@ function switchPage(key) {
     $('applyConfig').onclick = action(async () => {const next = JSON.parse($('terrainConfig').value); if (!next || Array.isArray(next) || typeof next !== 'object') throw new Error('配置必须是 JSON 对象'); terrainConfig = next; tell('已应用，下次导入将由后端验证并构建。');});
   }
   if (key === 'maps') action(renderMaps)();
+  if (key === 'resources') mountResources($('contentPage'));
   if (key === 'diagnostics') {$('contentPage').innerHTML = '<h2>实时诊断</h2><pre id="diagnosticOutput" style="white-space:pre-wrap"></pre>'; updateTelemetry(state.robot);}
   if (key === 'settings') {
     mountMotionSettings($('contentPage'), {api, release, onChanged: limits => {
       if (state.robot) state.robot.limits = limits;
     }});
+    mountNavigationSettings($('contentPage'),{api,release});
+    $('contentPage').insertAdjacentHTML('afterbegin','<section class="motion-settings"><h2>地图显示</h2><label class="setting-row" for="wallHighlight">墙面高亮<input id="wallHighlight" type="checkbox"></label><p class="settings-note">用橙色和较大点径突出已保存地图中的墙面候选。柜体立面也可能被高亮；不改变导航碰撞判断。</p><p class="settings-note" id="wallPreferenceStatus" role="status">自动保存到当前浏览器。关闭后恢复普通点云显示；实时雷达帧保留原有配色。</p></section>');
+    $('wallHighlight').checked=!!wallEmphasis.value;
+    $('wallHighlight').onchange=event=>{
+      wallEmphasis.value=event.target.checked?1:0;updateWallLegend();
+      try{localStorage.setItem('dog-web-wall-highlight',String(event.target.checked));$('wallPreferenceStatus').textContent='已保存到当前浏览器；立即生效';}
+      catch{$('wallPreferenceStatus').textContent='已应用；浏览器不允许保存偏好，刷新后将恢复默认值';}
+    };
   }
   updateTelemetry(state.robot);
 }
@@ -481,14 +668,61 @@ function updateTelemetry(data) {
     const ready = key === 'navigation' ? data.navigation_ready : key === 'localization' ? data.localization_ready : key === 'tf' ? data.tf_ready : key === 'control' ? data.control_ready : stream?.fresh;
     button.querySelector('i').className = `dot ${ready ? 'green' : 'amber'}`;
     button.querySelector('small').textContent = key==='localization' ? data.localization?.fresh ? data.localization.valid?'已确认定位':data.localization.state:'未收到定位状态' : key==='navigation' ? data.navigation?.fresh?data.navigation.phase||'等待任务':'未收到执行状态' : ready ? '数据新鲜' : stream ? '数据过期' : '未收到数据';
-    button.querySelector('b').textContent = stream ? `${stream.hz.toFixed(1)} Hz` : ready ? '就绪' : '—';
+    button.querySelector('b').textContent = stream ? !stream.fresh?'—':stream.hz_available===false?'统计中':`${stream.hz.toFixed(1)} Hz` : ready ? '就绪' : '—';
   }
   const nav=data.navigation||{};
+  const live=liveStartAvailable();
+  $('pickStart').hidden=live;
+  if(live&&state.selection==='start')state.selection='goal';
+  if(live&&!state.routeReady)$('startCoordinates').textContent='当前定位（自动）';
+  if(!state.routeReady)document.querySelector('.route-track').textContent=live?'当前定位 → 终点 · 规划后确认导航':'手选起终点进行离线预览';
+  const moved=state.routePose&&data.pose?.position&&Math.hypot(...data.pose.position.map((v,i)=>v-state.routePose[i]))>.3;
+  if(state.routeLive&&(!live||moved)){clearRoute();state.start=null;$('startCoordinates').textContent=live?'当前定位（自动）':'定位未就绪';$('taskBadge').textContent=moved?'起点已移动，请重新规划':'定位失效，请重新确认';}
   const active=nav.fresh&&['waiting_inputs','following','paused','relocalizing','waiting_route','waiting_walk_state'].includes(nav.task_state);
-  $('execute').disabled=!data.navigation_ready||active||!state.goal;
-  $('execute').title=data.navigation_ready?'使用实时定位作为起点':'需要执行开关、标定、定位和安全仲裁就绪';
+  $('execute').textContent='确认并导航';
+  $('execute').disabled=!data.navigation_ready||active||state.navigationSubmitting||state.navigationCancelling||!state.goal||!state.routeReady||!state.routeLive||!live;
+  const blockers=[];
+  if(!data.navigation_ready){
+    if(!nav.fresh)blockers.push('导航执行节点未就绪或状态已过期');
+    else{
+      if(nav.enabled===false)blockers.push('导航执行未启用');
+      if(nav.guard_auto_enabled===false)blockers.push('安全仲裁未允许自主导航');
+      if(nav.localization_ready===false)blockers.push('执行节点的定位未就绪');
+      if(!blockers.length)blockers.push('导航执行条件未就绪');
+    }
+  }
+  if(active)blockers.push('已有导航任务，请先暂停或取消');
+  const taskReasons={no_measured_progress:'未测到足够运动进展',input_or_recovery_timeout:'输入或恢复等待超时',cancelled_by_user:'用户取消',terrain_tracking_error:'偏离地形路线',actual_or_predicted_footprint_not_certified:'实际位置或预计运动未通过机身碰撞/支撑检查',braking_or_footprint_collision:'制动包络或机身碰撞/支撑检查未通过',executor_motion_limits_stale:'执行器速度参数状态过期',manual_takeover_requires_new_task:'手动控制已接管，需要新任务'};
+  Object.assign(taskReasons,{
+    waiting_route:'等待可执行路线',
+    blocked_no_route:'新障碍阻断通路，等待重新规划',
+    start_blocked:'当前机身周围的障碍间隙不足，已停车',
+    goal_blocked:'终点被障碍占用',
+    planning_budget_exceeded:'绕障搜索超时，已停车并重试',
+    forward_execution_route_not_certified:'绕行路线的机身或转弯检查未通过',
+    no_executable_braking_velocity:'当前空间内没有满足最低行走速度的安全制动轨迹',
+    smoothed_braking_velocity_not_certified:'速度过渡未通过制动检查，已停车',
+  });
+  const reason=taskReasons[nav.reason]||nav.reason||'';
+  if(active&&reason)blockers.push('当前状态：'+reason);
+  const lastBlock=nav.last_block_reason||nav.last_guard_block_reason||'';
+  if(state.navigationStartError){$('taskBadge').textContent='导航启动失败';blockers.push(state.navigationStartError);}
+  else if(nav.fresh&&nav.task_state==='aborted'&&(!state.routeReady||state.routeSubmitted)){
+    $('taskBadge').textContent='导航失败';
+    blockers.push('上次任务失败：'+reason+(lastBlock?'；最近拦截：'+(taskReasons[lastBlock]||lastBlock):''));
+  }else if(nav.fresh&&active)$('taskBadge').textContent=nav.task_state==='paused'?'任务已暂停':'导航任务执行中';
+  else if(nav.fresh&&nav.task_state==='cancelled'&&(!state.routeReady||state.routeSubmitted))$('taskBadge').textContent='任务已取消';
+  else if(nav.fresh&&nav.task_state==='succeeded'&&(!state.routeReady||state.routeSubmitted))$('taskBadge').textContent='导航已完成';
+  if(!live)blockers.push('需要当前地图中的新鲜定位');
+  if(!state.goal)blockers.push('请先选择终点');
+  else if(!state.routeReady||!state.routeLive)blockers.push('请从当前定位重新规划路线');
+  let hint=$('navigationExecutionHint');
+  if(!hint){hint=document.createElement('p');hint.id='navigationExecutionHint';hint.className='execution-hint';hint.setAttribute('role','status');$('execute').closest('.action-row').after(hint);}
+  hint.textContent=blockers.length?'暂不能导航：'+blockers.join('；'):'路线已就绪，点击“确认并导航”开始执行';
+  $('execute').title=hint.textContent;
   $('pause').disabled=!active;$('pause').textContent=nav.task_state==='paused'?'继续任务':'暂停任务';
-  $('cancel').textContent=active?'取消任务':'清除路线';
+  $('cancel').textContent=state.navigationCancelling?'正在停车并取消…':active?'停车并取消导航':'取消导航 / 清除路线';
+  $('cancel').disabled=!!state.navigationCancelling;
   updateRobotModel();
   liveClouds.visibility();
   const orientation = data.body_orientation || (data.tf_ready && data.pose?.quaternion);
@@ -527,4 +761,4 @@ $('closeDialog').onclick = $('confirmDialog').onclick = () => $('detailDialog').
 $('showEvents').onclick = () => {$('events').hidden = !$('events').hidden;};
 $('collapseEvents').onclick = () => {$('events').hidden = true;};
 setInterval(() => {$('clock').textContent = new Date().toLocaleTimeString('zh-CN');}, 1000);
-switchPage('overview'); poll(); pollModel();
+switchPage('overview'); poll(); pollModel(); pollNavigationPaths();

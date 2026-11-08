@@ -218,10 +218,41 @@ TEST(ImuInitializer, RejectsNonzeroMeanGyroDespiteLowVariance)
   ImuInitializer initializer(options);
 
   for (const double timestamp : {0.0, 0.5, 1.0, 1.5}) {
-    EXPECT_EQ(initializer.addSample(sample(timestamp, 0.02)),
+    EXPECT_EQ(
+      initializer.addSample(sample(timestamp, 0.02)),
       ImuInitializationStatus::kCollecting);
   }
   EXPECT_FALSE(initializer.isInitialized());
+}
+
+TEST(ImuInitializer, CenteredVarianceRetainsSmallMotionAndExactStaticSamples)
+{
+  ImuInitializerOptions options;
+  options.duration_sec = 1.0;
+  options.min_samples = 3U;
+  options.accel_norm_threshold = 0.0;
+  options.accel_std_threshold = 1.0;
+  options.gyro_std_threshold = 1.0;
+  ImuInitializer initializer(options);
+  const Eigen::Vector3d mean = Eigen::Vector3d(0.3, -0.7, 1.0).normalized() * 15.0;
+  for (int i = 0; i < 3; ++i) {
+    auto value = sample(i * 0.5, 0.0);
+    value.accel = mean + Eigen::Vector3d((i - 1) * 1e-7, 0.0, 0.0);
+    initializer.addSample(value);
+  }
+  ASSERT_TRUE(initializer.isInitialized());
+  EXPECT_NEAR(initializer.stats().accel_stddev.x(), std::sqrt(2.0 / 3.0) * 1e-7, 1e-14);
+  EXPECT_DOUBLE_EQ(initializer.stats().accel_stddev.y(), 0.0);
+  EXPECT_DOUBLE_EQ(initializer.stats().accel_stddev.z(), 0.0);
+  EXPECT_TRUE(initializer.stats().mean_accel.isApprox(mean, 1e-14));
+  initializer.reset();
+  for (int i = 0; i < 3; ++i) {
+    auto value = sample(i * 0.5, 0.0);
+    value.accel = mean;
+    initializer.addSample(value);
+  }
+  ASSERT_TRUE(initializer.isInitialized());
+  EXPECT_TRUE(initializer.stats().accel_stddev.isZero(0.0));
 }
 
 TEST(ImuInitializer, RejectsTimestampRegressionAndNonFiniteSample)

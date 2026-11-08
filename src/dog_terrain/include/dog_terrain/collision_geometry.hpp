@@ -32,6 +32,24 @@ inline std::optional<double> sweptBoxContact(
   return enter;
 }
 
+// Conservative rotating-box sweep: within each yaw interval, the midpoint
+// rectangle is enlarged by the maximum corner displacement. The translating
+// enlarged box covers every intermediate orientation, not just sample poses.
+inline std::optional<double> sweptTurningBoxContact(
+    const Eigen::Vector3d &a,const Eigen::Vector3d &b,const Eigen::Vector3d &obstacle,
+    double first_yaw,double last_yaw,double half_length,double half_width,double bottom,double top) {
+  const double angle=std::remainder(last_yaw-first_yaw,2*3.14159265358979323846);
+  const int count=std::max(1,int(std::ceil(std::abs(angle)/.06)));
+  const double expansion=2*std::hypot(half_length,half_width)*std::sin(std::abs(angle)/(4*count));
+  for(int i=0;i<count;++i){
+    const double t=double(i)/count,u=double(i+1)/count;
+    const auto hit=sweptBoxContact(a+t*(b-a),a+u*(b-a),obstacle,
+      first_yaw+(t+u)*.5*angle,half_length+expansion,half_width+expansion,bottom,top);
+    if(hit)return (i+*hit)/count;
+  }
+  return std::nullopt;
+}
+
 // Continuous sweep of a vertical circular body along a 3D ground segment.
 // All coordinates must be finite, radius positive, bottom < top. Ground support
 // is a separate constraint: this function cannot certify a floor or a stair.

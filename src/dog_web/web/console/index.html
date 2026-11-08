@@ -13,6 +13,8 @@
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="map_library.css">
   <link rel="stylesheet" href="workspace_modes.css">
+  <link rel="stylesheet" href="motion_settings.css">
+  <link rel="stylesheet" href="resources.css">
 </head>
 <body>
   <aside class="sidebar">
@@ -28,6 +30,7 @@
       <div class="nav-divider"></div>
       <button data-page="diagnostics"><span>◉</span>设备与诊断</button>
       <button data-page="settings"><span>⚙</span>参数设置</button>
+      <button data-page="resources" title="资源监控" aria-label="资源监控"><span>▥</span>资源监控</button>
     </nav>
     <div class="sidebar-note"><span class="mini-label">CURRENT PROJECT</span><strong>园区 A · 多层环境</strong><span>building_a / revision 08</span><div class="tiny-progress"><i></i></div><small>几何地图 · Z 轴向上 · 单位 m</small></div>
     <div class="sidebar-bottom"><i class="dot amber"></i>本地设计原型<span>v0.1</span></div>
@@ -63,7 +66,7 @@
             <div class="layer-popover" id="layerPopover" hidden><strong>场景图层</strong><label><input type="checkbox" data-layer="cloud" checked> 几何点云</label><label><input type="checkbox" data-layer="surface" checked> 地表轮廓</label><label><input type="checkbox" data-layer="scan" checked> 当前雷达帧</label><label><input type="checkbox" data-layer="path" checked> 规划路径</label><label><input type="checkbox" data-layer="grid" checked> 参考网格</label><label>高度裁切 <output id="heightValue">3.5 m</output><input type="range" id="heightClip" min="0" max="3.5" step="0.1" value="3.5"></label></div>
             <div class="floor-switch"><span>楼层</span><button data-floor="all" class="active">全部</button><button data-floor="1">1F</button><button data-floor="2">2F</button></div>
             <div class="map-label" id="goalLabel">◎ 目标点 · 二层平台</div>
-            <div class="scene-legend"><span><i class="legend-dot cloud"></i>几何点云</span><span><i class="legend-dot walk"></i>普通地表</span><span><i class="legend-dot stair"></i>台阶候选</span><span><i class="legend-line"></i>规划路线</span></div>
+            <div class="scene-legend"><span id="wallLegendItem" title="橙色突出近似竖直的平面，也可能包含柜体立面；仅用于显示"><i class="legend-dot" style="background:#ff9955"></i><b id="wallLegend">墙面候选</b></span><span><i id="cloudLegendDot" class="legend-dot" style="background:#718698"></i><b id="cloudLegend">其他点云</b></span><span><i class="legend-dot walk"></i>普通地表</span><span><i class="legend-line"></i>规划路线</span></div>
             <div class="axis"><span>Z</span><span>Y</span><span>X</span><b>↗</b></div>
           </div>
           <div class="scene-footer"><span>拖动旋转 · Shift + 拖动平移 · 滚轮缩放</span><span id="sceneCoordinate">map · Z ↑ · m</span></div>

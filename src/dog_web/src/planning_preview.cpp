@@ -3,6 +3,9 @@
 #include "pcd_catalog.hpp"
 #include "control_socket.hpp"
 #include "map_library.hpp"
+#include "navigation_start.hpp"
+#include "resource_monitor.hpp"
+#include "dog_navigation/navigation_motion_settings.hpp"
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
@@ -105,6 +108,27 @@ public:
   }
 
 private:
+  Eigen::Vector3d checkedLiveStart(const Graph &graph,const Json &telemetry,const fs::path &project){
+    const auto start=localizedPlanningStart(telemetry,project,graph.revision());
+    const auto &q=telemetry.at("pose").at("quaternion");
+    const Eigen::Quaterniond rotation(q[3].get<double>(),q[0].get<double>(),q[1].get<double>(),q[2].get<double>());
+    const auto heading=rotation.normalized()*Eigen::Vector3d::UnitX();
+    const double yaw=std::atan2(heading.y(),heading.x());
+    if(!graph.motionClear(start,start,yaw,yaw))
+      throw std::invalid_argument("机器人实际接地点未通过地图支撑/机身碰撞检查；请核对 base_ground_offset 与定位。规划吸附点不能替代实际起点");
+    return start;
+  }
+  Json navigationSettings(const Json *request=nullptr){
+    using Profile=dog_navigation::NavigationMotionSettings;
+    std::lock_guard<std::mutex> lock(navigation_settings_mutex_);
+    Profile profile(root_/".navigation-motion.json");
+    const auto nav=robot_?robot_->telemetry().value("navigation",Json::object()):Json::object();
+    const Json active=nav.value("fresh",false)?nav.value("motion_limits",Json(nullptr)):Json(nullptr);
+    if(request)profile.save(*request);
+    const auto saved=fs::exists(root_/".navigation-motion.json")?Profile::values(profile.load()):
+      active.is_object()?active:Profile::values(dog_navigation::ExecutionOptions{});
+    return {{"saved",saved},{"active",active},{"restart_required",active.is_null()||active!=saved}};
+  }
   Response json(http::status status, const Json &value) {
     return response(status, value.dump(), "application/json; charset=utf-8");
   }
@@ -139,6 +163,8 @@ private:
   Response handle(const Request &request) {
     const std::string target(request.target()), path = target.substr(0, target.find('?'));
     if (request.method() == http::verb::get) {
+      if(path=="/api/system/resources")return json(http::status::ok,resources_.snapshot());
+      if(path=="/api/settings/navigation")return json(http::status::ok,navigationSettings());
       if(path=="/api/slam/pcds")return json(http::status::ok,library_.savedPcds());
       if(path=="/api/cloud/manifest"||path=="/api/cloud/tile"){
         const auto packet=robot_?robot_->cloudPacket(false):nullptr;
@@ -195,6 +221,8 @@ private:
       }
       if(path=="/api/settings/motion")return json(http::status::ok,settings_->snapshot());
       if (path == "/api/robot") return json(http::status::ok, robot_ ? robot_->telemetry() : Json{{"ros", false}});
+      if (path == "/api/navigation/paths") return json(http::status::ok,robot_?robot_->navigationPaths():
+          Json{{"valid",false},{"reason","ros_unavailable"}});
       if (path == "/api/robot/model") return json(http::status::ok,robot_?robot_->modelTelemetry():
         Json{{"joints",nullptr},{"body_orientation",nullptr},{"pose",nullptr},{"tf_ready",false}});
       if (path == "/api/robot/cloud") return json(http::status::ok,
@@ -214,6 +242,20 @@ private:
         auto result = graph->summary(); result["map_id"] = name;
         result["display_name"]=library_.displayName("map",name);
         result["source"] = source;
+        const auto params=query(target);
+        if(params.count("encoding")&&params.at("encoding")=="float32") {
+          std::string bytes;
+          const auto &points=graph->cloud();const size_t stride=std::max(size_t(1),(points.size()+149999)/150000);
+          const size_t cloud_count=(points.size()+stride-1)/stride;
+          size_t surface_count=0;for(const auto &node:graph->nodes())surface_count+=node.valid;
+          bytes.reserve((cloud_count*3+surface_count*4)*sizeof(float));
+          const auto append=[&](float value){uint32_t bits;std::memcpy(&bits,&value,sizeof(bits));for(int i=0;i<4;++i)bytes.push_back(static_cast<char>((bits>>(8*i))&255));};
+          for(size_t i=0;i<points.size();i+=stride){append(points[i].x);append(points[i].y);append(points[i].z);}
+          for(const auto &node:graph->nodes())if(node.valid){append(node.point.x());append(node.point.y());append(node.point.z());append(node.component);}
+          result["encoding"]="xyz-surface-f32le-v1";result["cloud_count"]=cloud_count;result["surface_count"]=surface_count;
+          auto packed=response(http::status::ok,std::move(bytes),"application/octet-stream");
+          packed.set("X-Map-Metadata",result.dump(-1,' ',true));return packed;
+        }
         Json cloud = Json::array(), surfaces = Json::array();
         const auto &points = graph->cloud();
         size_t stride = std::max(size_t(1), (points.size() + 149999) / 150000);
@@ -339,6 +381,7 @@ private:
       }));
     }
     if(path=="/api/settings/motion")return json(http::status::ok,robot_?robot_->saveMotionSettings(body):settings_->save(body));
+    if(path=="/api/settings/navigation")return json(http::status::ok,navigationSettings(&body));
     if(path.rfind("/api/localization/",0)==0||path=="/api/navigation/start") {
       if(!robot_)return json(http::status::service_unavailable,{{"error","ROS bridge disabled"}});
       Json command=body;
@@ -346,6 +389,7 @@ private:
         if(!graph_||body.at("map_id")!=map_id_||body.at("revision")!=graph_->revision())
           throw std::invalid_argument("地图未加载或版本已变化，请重新加载后再设置位姿");
         command["map_project"]=fs::weakly_canonical(root_/map_id_).string();
+        if(path=="/api/navigation/start")checkedLiveStart(*graph_,robot_->telemetry(),root_/map_id_);
       }
       return json(http::status::ok,robot_->command(path,command));
     }
@@ -376,20 +420,27 @@ private:
         return json(http::status::conflict, {{"error", "Map changed; reload and select endpoints again"}});
       if(path=="/api/inspect_surface") {
         auto result=graph->inspectSurface(point(body.at("point")));
+        if(body.contains("yaw"))result["requested_motion_clear"]=graph->motionClear(point(body.at("point")),point(body.at("point")),body.at("yaw").get<double>(),body.at("yaw").get<double>());
         result["map_id"]=name;return json(http::status::ok,result);
       }
       Json result;
-      try {result = graph->plan(point(body.at("start")), point(body.at("goal")));}
+      const bool live=body.value("use_robot_start",false);
+      if(live&&!robot_)throw std::invalid_argument("实时定位规划需要启用 ROS 接口");
+      const auto start=live?checkedLiveStart(*graph,robot_->telemetry(),root_/name):point(body.at("start"));
+      try {result = graph->plan(start, point(body.at("goal")));}
       catch (const std::invalid_argument &error) {
         return json(http::status::bad_request,{{"error",error.what()},
-            {"start_surface",graph->inspectSurface(point(body.at("start")))},
+            {"start_surface",graph->inspectSurface(start)},
             {"goal_surface",graph->inspectSurface(point(body.at("goal")))}});
       }
-      result["map_id"] = name; return json(http::status::ok, result);
+      result["map_id"] = name;result["start_source"]=live?"localization":"manual";
+      return json(http::status::ok, result);
     }
     return json(http::status::not_found, {{"error", "Unknown endpoint"}});
   }
   fs::path root_, web_, console_, description_;
+  ResourceMonitor resources_;
+  std::mutex navigation_settings_mutex_;
   std::mutex mutex_;
   std::future<void> worker_;
   std::shared_ptr<Graph> graph_;
@@ -427,7 +478,7 @@ void session(tcp::socket socket, Service &service,asio::thread_pool &control,asi
       asio::post(streams,[socket=std::move(socket),request=std::move(request),&service]() mutable {service.controlStream(std::move(socket),std::move(request));});return;
     }
     // Tiny status/model snapshots must not queue behind slow point-cloud readers.
-    const bool fast=target.rfind("/api/control/",0)==0||target=="/api/robot"||target=="/api/robot/model"||target=="/api/settings/motion";
+    const bool fast=target.rfind("/api/control/",0)==0||target=="/api/navigation/cancel"||target=="/api/navigation/paths"||target=="/api/robot"||target=="/api/robot/model"||target=="/api/settings/motion";
     auto &pool=fast?control:responses;
     asio::post(pool,[socket=std::move(socket),request=std::move(request),&service]() mutable {
     try {

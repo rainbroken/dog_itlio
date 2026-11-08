@@ -1,10 +1,28 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {robotPlacement} from '../web/console/robot_pose.js';
+import {robotPlacement, localizationMapStatus} from '../web/console/robot_pose.js';
 
 const project={map_id:'saved-map'};
 function telemetry() {return {tf_ready:true,pose:{position:[3,-2,.65],quaternion:[0,0,0,1],frame:'map',age_ms:30},
-  localization:{map_path:'/maps/saved-map/cloud.pcd',fresh:true,valid:true}};}
+  localization:{map_path:'/maps/saved-map/cloud.pcd',map_ready:true,fresh:true,valid:true}};}
+
+test('missing or expired localization is never reported as a map mismatch',()=>{
+  for (const loc of [undefined, {fresh:false,valid:false},
+    {...telemetry().localization,fresh:false,map_path:'/maps/old'}]) {
+    assert.equal(localizationMapStatus(loc,project).state,'unavailable');
+    assert.equal(robotPlacement({...telemetry(),localization:loc},project,{page:'navigation'}).reason,
+      '定位节点未就绪或状态已过期');
+  }
+});
+test('map loading, missing identity, mismatch and unconfirmed registration stay distinct',()=>{
+  const loc=telemetry().localization;
+  assert.equal(localizationMapStatus({...loc,map_ready:false,map_path:''},project).state,'not_loaded');
+  assert.equal(localizationMapStatus({...loc,map_path:''},project).state,'unknown_map');
+  assert.equal(localizationMapStatus({...loc,map_path:'/maps/other/cloud.pcd'},project).state,'mismatch');
+  assert.equal(localizationMapStatus({...loc,valid:false},project).state,'unconfirmed');
+  for (const path of ['/maps/saved-map','/maps/saved-map/','/maps/saved-map/localization.pcd','/maps/saved-map/cloud.pcd'])
+    assert.equal(localizationMapStatus({...loc,map_path:path},project).state,'ready');
+});
 
 test('mapping uses live base TF even while a different saved project remains loaded',()=>{
   const data=telemetry();data.localization={map_path:'/maps/other/cloud.pcd',fresh:false,valid:false};

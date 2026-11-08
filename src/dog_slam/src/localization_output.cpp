@@ -33,6 +33,12 @@ void MapLocalizer::publishStatus() {
         Command c; c.kind=Kind::Invalidate; commands_.push_back(c); condition_.notify_one();
       }
       value={{"state",label_},{"valid",freshLocked()},{"map_ready",map_ready_},{"map_path",loaded_path_},
+        {"input_fresh",last_received_stamp_>0 && std::chrono::duration<double>(Steady::now()-input_receipt_).count()<=timeout_},
+        {"input_age_ms",last_received_stamp_>0 ? Json(std::chrono::duration<double,std::milli>(Steady::now()-input_receipt_).count()) : Json(nullptr)},
+        {"registration_running",registration_running_},
+        {"global_timing_state",global_timing_state_},
+        {"global_relocalization_elapsed_ms",global_timing_state_=="running"?
+          std::chrono::duration<double,std::milli>(Steady::now()-global_started_).count():global_duration_ms_},
         {"map_frame",map_frame_},{"odom_frame",odom_frame_},{"base_frame",base_frame_},
         {"reason",reason_},{"has_prior",public_.has_prior},{"confirmations",public_.confirmations},
         {"failures",public_.failures},{"rmse",public_.match.rmse},{"overlap",public_.match.overlap},

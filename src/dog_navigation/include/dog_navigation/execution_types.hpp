@@ -6,6 +6,8 @@
 #include <string>
 
 namespace dog_navigation {
+// Matches dog_ws's ordinary-ground lateral limit; stairs remain forward-only.
+inline constexpr double autonomous_lateral_speed = .25;
 struct Velocity {
   double x = 0, y = 0, yaw = 0;
 };
@@ -14,13 +16,22 @@ struct TrackingPose {
   double yaw = 0;
   Velocity measured;
 };
+inline bool straightContinuation(const Point &a,const Point &b,const Point &c){
+  const Point first=b-a,next=c-b;
+  return first.norm()>1e-9&&next.norm()>1e-9&&first.dot(next)>0&&
+    first.cross(next).norm()<=1e-8*first.norm()*next.norm();
+}
 struct ExecutionOptions {
-  double walk_speed = .20, stair_speed = .08, acceleration = .15,
-         yaw_rate = .30, yaw_acceleration = .5;
-  double stair_yaw_rate = .15, heading_tolerance = .08,
+  double walk_speed = .30, stair_speed = .21, acceleration = .50,
+         yaw_rate = .50, yaw_acceleration = .5;
+  double startup_linear_speed = 0., startup_yaw_rate = 0.;
+  double stair_yaw_rate = .21, heading_tolerance = .08,
          waypoint_tolerance = .008;
   double goal_xy = .15, goal_z = .12, goal_yaw = .10, max_tracking_error = .12;
   double stopped_speed = .025, settle_time = .4;
+  // Pursue a point ahead along gentle terrain edges, never across a stair
+  // transition or a sharp corner. Zero retains strict stop-at-each-edge mode.
+  double lookahead_distance = .80, continuous_turn_angle = 1.05;
   void validate() const;
 };
 struct TimedSample {

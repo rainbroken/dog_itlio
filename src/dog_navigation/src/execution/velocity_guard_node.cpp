@@ -1,4 +1,5 @@
 #include "velocity_guard_node.hpp"
+#include "dog_navigation/navigation_motion_settings.hpp"
 
 namespace dog_navigation {
 bool VelocityGuard::fresh(const builtin_interfaces::msg::Time &stamp,
@@ -13,9 +14,13 @@ VelocityGuard::VelocityGuard() : Node("velocity_guard") {
   const bool requested = declare_parameter<bool>("allow_autonomous", false);
   const bool calibrated =
       declare_parameter<bool>("calibration_confirmed", false);
-  offset_ = declare_parameter<double>("base_ground_offset", .65);
+  offset_ = declare_parameter<double>("base_ground_offset", .40);
   const auto root = canonicalMapPath(
       declare_parameter<std::string>("map_root", "~/.local/share/dog/maps"));
+  const auto motion_limits=NavigationMotionSettings(root/".navigation-motion.json").load();
+  input_.autonomous_limits={motion_limits.walk_speed,autonomous_lateral_speed,motion_limits.yaw_rate};
+  braking_deceleration_=std::min(.15,motion_limits.acceleration);
+  yaw_braking_deceleration_=std::min(.5,motion_limits.yaw_acceleration);
   const auto id = declare_parameter<std::string>("map_id", "");
   if (!id.empty()) {
     project_ = std::filesystem::weakly_canonical(dog_terrain::mapPath(root, id))
@@ -66,9 +71,28 @@ VelocityGuard::VelocityGuard() : Node("velocity_guard") {
         if (localization_)
           localization_->updateJson(m->data, std::chrono::steady_clock::now());
       });
+  executor_status_sub_=create_subscription<std_msgs::msg::String>(
+      "/navigation_executor/status",rclcpp::QoS(1).transient_local(),
+      [this](std_msgs::msg::String::ConstSharedPtr msg){
+        try{
+          const auto status=dog_terrain::Json::parse(msg->data);
+          if(status.at("map_project")!=project_||status.at("map_revision")!=revision_)return;
+          const auto limits=NavigationMotionSettings::apply(status.at("motion_limits"));
+          input_.autonomous_limits={limits.walk_speed,autonomous_lateral_speed,limits.yaw_rate};
+          // Never make the braking envelope shorter after receiving a profile.
+          // The task match below also prevents a newly started executor from
+          // inheriting stale limits from a preceding process/task.
+          braking_deceleration_=std::min(braking_deceleration_,limits.acceleration);
+          yaw_braking_deceleration_=std::min(yaw_braking_deceleration_,limits.yaw_acceleration);
+          executor_limits_task_=status.at("task_id").get<std::string>();executor_limits_at_=guardWall();
+        }catch(const std::exception &){executor_limits_at_=0;}
+      });
   route_sub_ = create_subscription<dog_interfaces::msg::TerrainRoute>(
       "/local_navigation/terrain_route", 1,
       [this](dog_interfaces::msg::TerrainRoute::ConstSharedPtr m) {
+        const auto previous=route_;const double previous_deadline=route_deadline_;
+        const double previous_handoff_deadline=handoff_deadline_;
+        handoff_deadline_=0;
         route_deadline_ = 0;
         route_.reset();
         if (!graph_ || !m->valid || m->header.frame_id != "map" ||
@@ -83,7 +107,7 @@ VelocityGuard::VelocityGuard() : Node("velocity_guard") {
         for (size_t i = 0; i < m->points.size(); ++i) {
           const auto id = m->node_ids[i];
           const auto &p = m->points[i];
-          if (id < 0 || size_t(id) >= graph_->nodes().size() ||
+          if (id < 0 || size_t(id) >= graph_->nodes().size() || !Point(p.x,p.y,p.z).allFinite()||
               (graph_->nodes()[id].point - Point(p.x, p.y, p.z)).norm() > 1e-5)
             return;
         }
@@ -96,6 +120,19 @@ VelocityGuard::VelocityGuard() : Node("velocity_guard") {
         route_deadline_ =
             guardWall() +
             std::max(0., std::min(.6, m->valid_for_seconds) - age);
+        // Permit only the already-issued, still-live command during route
+        // handoff. Collision checks use the NEW route and its NEW obstacles.
+        // Invalid routes, changed goals and expired commands never carry over.
+        if(previous&&previous->has_goal&&m->has_goal&&previous->goal_stamp==m->goal_stamp&&
+           previous->goal==m->goal){
+          if(previous->generation!=m->generation&&previous->generation==last_command_.route_generation){
+            handoff_generation_=previous->generation;
+            handoff_deadline_=std::min(previous_deadline,input_.command_deadline);
+          }else if(previous->generation==m->generation){
+            // An obstacle/lease refresh cannot extend the original handoff.
+            handoff_deadline_=previous_handoff_deadline;
+          }
+        }
       });
   estop_ = create_service<std_srvs::srv::SetBool>(
       "~/estop", [this](std::shared_ptr<std_srvs::srv::SetBool::Request> q,
@@ -114,16 +151,25 @@ VelocityGuard::VelocityGuard() : Node("velocity_guard") {
                          ? "Stop latched; clearing requires measured standstill"
                          : "Stop cleared; old task remains revoked";
       });
+  cancel_=create_service<std_srvs::srv::Trigger>("~/cancel",
+      [this](std::shared_ptr<std_srvs::srv::Trigger::Request>,std::shared_ptr<std_srvs::srv::Trigger::Response> r){
+        arbiter_.manualTakeover(input_.task_id.empty()?executor_limits_task_:input_.task_id);
+        input_.command_deadline=0;input_.autonomous={};input_.manual={};input_.manual_deadline=0;
+        route_.reset();route_deadline_=0;
+        handoff_deadline_=0;
+        output_->publish(geometry_msgs::msg::Twist());
+        r->success=true;r->message="Autonomous task revoked; zero velocity published";
+      });
   timer_ = create_wall_timer(std::chrono::duration<double>(1. / frequency), [this] { tick(); });
 }
 void VelocityGuard::command(
     dog_interfaces::msg::NavigationCommand::ConstSharedPtr m) {
+  // Reordered packets cannot revoke or renew the current command lease.
+  if (m->task_id == input_.task_id && m->sequence <= sequence_)return;
   input_.command_deadline = 0;
   if (m->header.frame_id != "base_link" || !fresh(m->header.stamp, .15) ||
       m->map_revision != revision_ || !std::isfinite(m->valid_for_seconds) ||
       m->valid_for_seconds < 0 || m->valid_for_seconds > .15)
-    return;
-  if (m->task_id == input_.task_id && m->sequence <= sequence_)
     return;
   input_.task_id = m->task_id;
   sequence_ = m->sequence;

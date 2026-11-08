@@ -31,18 +31,23 @@ private:
   void tick();
   void receiveRoute(dog_interfaces::msg::TerrainRoute::ConstSharedPtr route);
   void submitPlannerGoal();
+  bool planner_goal_deferred_=false;
+  std::optional<rclcpp::Client<std_srvs::srv::Trigger>::FutureAndRequestId> planner_cleanup_;
   void finish(bool success, const std::string &reason, bool cancelled = false);
   void publishCommand(const TrackResult &result, bool permit);
   void publishState(const TrackResult &result);
   TrackingPose readPose(Pose &map_from_odom);
   bool enabled_ = false, use_yaw_ = false;
   double controller_frequency_ = 20.;
-  double ground_offset_ = .65, route_deadline_ = 0, feedback_at_ = 0,
+  double retry_interval_=4.;
+  double ground_offset_ = .40, route_deadline_ = 0, feedback_at_ = 0,
          robot_at_ = 0, guard_at_ = 0;
   double route_stamp_ = 0, last_tick_ = 0, last_request_ = -100,
          last_progress_ = 0;
   uint64_t sequence_ = 0, accepted_generation_ = 0;
+  int64_t cancelled_before_ns_=0;
   std::string task_id_, revision_, project_, guard_reason_, guard_task_id_;
+  std::string last_block_reason_,last_guard_block_reason_,planner_block_reason_;
   geometry_msgs::msg::PoseStamped goal_;
   dog_interfaces::msg::TerrainRoute::ConstSharedPtr route_;
   std::vector<int32_t> installed_ids_;

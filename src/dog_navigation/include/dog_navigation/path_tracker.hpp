@@ -8,7 +8,10 @@ public:
   explicit PathTracker(ExecutionOptions options = {});
   void setRoute(Points path, std::vector<bool> stairs, const TrackingPose &pose,
                 Point requested_goal, double goal_yaw, bool use_yaw);
-  TrackResult update(const TrackingPose &pose, double dt);
+  // Optional brake-envelope certificate supplied by execution. It constrains
+  // the target before smoothing; safety rejection after smoothing stops now.
+  TrackResult update(const TrackingPose &pose, double dt,
+                     const std::function<bool(const Velocity &)> &command_clear = {});
   void stop();
   bool hasRoute() const { return !path_.empty(); }
   const Points &path() const { return path_; }
@@ -23,6 +26,10 @@ private:
   bool use_yaw_ = false;
   Velocity previous_;
   bool entered_ = false;
+  bool aligning_ = true;
+  bool rotation_started_ = false;
+  bool continuousAfter(size_t endpoint) const;
+  bool readyToRotate(const TrackingPose &pose);
   double entry_settled_ = 0;
 };
 } // namespace dog_navigation

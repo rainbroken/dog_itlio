@@ -1,5 +1,11 @@
 /* Fixed-height console: status at the top, scene in the remaining viewport. */
+.scene-legend { flex-wrap: wrap; max-width: calc(100% - 85px); }
+.legend-line.execution-global { background: #1677ff; }
+.legend-line.execution-local { background: #20e882; }
+#localPathStatus { width: 100%; color: var(--muted); }
+[data-execution-legend][hidden],#localPathStatus[hidden] { display: none; }
 #manualControl .action-row, #modeCard .action-row { flex-wrap: wrap; }
+.execution-hint { margin: 8px 0; color: var(--muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 #manualControl [data-drive] { touch-action: none; user-select: none; }
 #mappingState { white-space: pre-wrap; overflow-wrap: anywhere; }
 #dialogBody { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 55vh; overflow: auto; }

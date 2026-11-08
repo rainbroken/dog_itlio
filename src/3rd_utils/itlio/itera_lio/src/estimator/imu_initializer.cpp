@@ -69,24 +69,12 @@ ImuInitializationStatus ImuInitializer::addSample(const sensor::ImuData & sample
     last_timestamp_ = timestamp;
     window_end_timestamp_ = timestamp + options_.duration_sec;
     has_timestamp_ = true;
-    ++sample_count_;
-    sum_gyro_ = sample.gyro;
-    sum_accel_ = sample.accel;
-    sum_accel_direction_ = sample.accel.normalized();
-    sum_sq_gyro_ = sample.gyro.array().square().matrix();
-    sum_sq_accel_ = sample.accel.array().square().matrix();
-    updateStatistics();
+    accumulate(sample);
     return ImuInitializationStatus::kCollecting;
   }
 
   last_timestamp_ = sample.timestamp;
-  ++sample_count_;
-  sum_gyro_ += sample.gyro;
-  sum_accel_ += sample.accel;
-  sum_accel_direction_ += sample.accel.normalized();
-  sum_sq_gyro_ += sample.gyro.array().square().matrix();
-  sum_sq_accel_ += sample.accel.array().square().matrix();
-  updateStatistics();
+  accumulate(sample);
 
   // A moving platform must provide a fresh, contiguous stationary window.
   if (sample_count_ >= 2U && !stationary()) {
@@ -96,13 +84,7 @@ ImuInitializationStatus ImuInitializer::addSample(const sensor::ImuData & sample
     last_timestamp_ = timestamp;
     window_end_timestamp_ = timestamp + options_.duration_sec;
     has_timestamp_ = true;
-    ++sample_count_;
-    sum_gyro_ = sample.gyro;
-    sum_accel_ = sample.accel;
-    sum_accel_direction_ = sample.accel.normalized();
-    sum_sq_gyro_ = sample.gyro.array().square().matrix();
-    sum_sq_accel_ = sample.accel.array().square().matrix();
-    updateStatistics();
+    accumulate(sample);
     return ImuInitializationStatus::kCollecting;
   }
 
@@ -157,14 +139,28 @@ void ImuInitializer::reset()
   last_timestamp_ = 0.0;
   window_end_timestamp_ = 0.0;
   has_timestamp_ = false;
-  sum_gyro_.setZero();
-  sum_accel_.setZero();
   sum_accel_direction_.setZero();
-  sum_sq_gyro_.setZero();
-  sum_sq_accel_.setZero();
+  gyro_m2_.setZero();
+  accel_m2_.setZero();
   sample_count_ = 0U;
   stats_ = ImuInitializationStats{};
   initialized_state_ = NominalState{};
+}
+
+void ImuInitializer::accumulate(const sensor::ImuData & sample)
+{
+  // Welford's centered moments avoid cancellation in E[x^2] - E[x]^2,
+  // which can report motion even for identical tilted accelerometer samples.
+  ++sample_count_;
+  const double count = static_cast<double>(sample_count_);
+  const Eigen::Vector3d gyro_delta = sample.gyro - stats_.mean_gyro;
+  const Eigen::Vector3d accel_delta = sample.accel - stats_.mean_accel;
+  stats_.mean_gyro += gyro_delta / count;
+  stats_.mean_accel += accel_delta / count;
+  gyro_m2_ += gyro_delta.cwiseProduct(sample.gyro - stats_.mean_gyro);
+  accel_m2_ += accel_delta.cwiseProduct(sample.accel - stats_.mean_accel);
+  sum_accel_direction_ += sample.accel.normalized();
+  updateStatistics();
 }
 
 void ImuInitializer::updateStatistics()
@@ -181,12 +177,10 @@ void ImuInitializer::updateStatistics()
     return;
   }
   const double count = static_cast<double>(sample_count_);
-  stats_.mean_gyro = sum_gyro_ / count;
-  stats_.mean_accel = sum_accel_ / count;
   const Eigen::Vector3d gyro_variance =
-    (sum_sq_gyro_ / count - stats_.mean_gyro.array().square().matrix()).cwiseMax(0.0);
+    (gyro_m2_ / count).cwiseMax(0.0);
   const Eigen::Vector3d accel_variance =
-    (sum_sq_accel_ / count - stats_.mean_accel.array().square().matrix()).cwiseMax(0.0);
+    (accel_m2_ / count).cwiseMax(0.0);
   stats_.gyro_stddev = gyro_variance.cwiseSqrt();
   stats_.accel_stddev = accel_variance.cwiseSqrt();
 }

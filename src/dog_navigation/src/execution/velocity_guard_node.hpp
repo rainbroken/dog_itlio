@@ -9,6 +9,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/set_bool.hpp>
+#include <std_srvs/srv/trigger.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
@@ -24,9 +25,16 @@ private:
   bool fresh(const builtin_interfaces::msg::Time &stamp, double maximum) const;
   SafetyArbiter arbiter_;
   SafetyInput input_;
-  double status_at_ = 0, feedback_at_ = 0, route_deadline_ = 0, offset_ = .65;
+  double status_at_ = 0, feedback_at_ = 0, route_deadline_ = 0, offset_ = .40;
   bool auto_enabled_ = false;
+  bool collision_check_expired_=false;
+  double braking_deceleration_ = .15;
+  double yaw_braking_deceleration_ = .5;
+  double executor_limits_at_ = 0;
+  std::string executor_limits_task_;
   uint64_t sequence_ = 0;
+  uint64_t handoff_generation_=0;
+  double handoff_deadline_=0;
   std::string project_, revision_;
   Velocity measured_;
   dog_interfaces::msg::RobotStatus robot_;
@@ -45,7 +53,9 @@ private:
   rclcpp::Subscription<dog_interfaces::msg::RobotStatus>::SharedPtr robot_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr feedback_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr localization_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr executor_status_sub_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr estop_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr cancel_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 inline double guardWall() {

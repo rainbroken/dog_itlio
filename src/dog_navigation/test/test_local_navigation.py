@@ -7,6 +7,7 @@ import struct
 import subprocess
 import time
 import rclpy
+import pytest
 from rcl_interfaces.srv import GetParameters
 from ament_index_python.packages import get_package_prefix
 from geometry_msgs.msg import PoseStamped, TransformStamped
@@ -17,16 +18,17 @@ from std_srvs.srv import Trigger
 from tf2_msgs.msg import TFMessage
 
 
-def test_live_replanning_and_invalidations(monkeypatch, tmp_path):
+@pytest.mark.parametrize('budget',[0.4,0.000001])
+def test_live_replanning_and_invalidations(monkeypatch, tmp_path, budget):
     monkeypatch.setenv("ROS_DOMAIN_ID", str(100+os.getpid()%100))
     monkeypatch.setenv("ROS_LOCALHOST_ONLY", "1")
     prefix=Path(get_package_prefix("dog_navigation"))
     fixture=Path(__file__).resolve().parents[3]/"build/dog_navigation/test_local_planner"
-    env=dict(os.environ, DOG_NAV_TEST_MAP_ROOT=str(tmp_path))
+    env=dict(os.environ, DOG_NAV_TEST_MAP_ROOT=str(tmp_path),DOG_NAV_TEST_RECT='1')
     subprocess.run([str(fixture),"--gtest_filter=LocalPlanner.ProjectFixture"],env=env,check=True)
     log=(tmp_path/"node.log").open("w+")
     config=tmp_path/'navigation.yaml'
-    config.write_text('local_navigation:\n  ros__parameters:\n    processing_budget: 2.0\n    avoidance_weight: 3.5\n')
+    config.write_text(f'local_navigation:\n  ros__parameters:\n    base_ground_offset: 0.65\n    processing_budget: {budget}\n    avoidance_weight: 3.5\n')
     global_config=tmp_path/'global.yaml'
     global_config.write_text('local_navigation:\n  ros__parameters:\n    avoidance_weight: 2.5\n')
     local_config=tmp_path/'local.yaml'
@@ -59,6 +61,12 @@ def test_live_replanning_and_invalidations(monkeypatch, tmp_path):
             points=[(x,y,0.) for x in (-1.8,-1.,0.,1.,1.8) for y in (-1.,0.,1.)]
             if mode=="obstacle":points.extend((0.,0.,z) for z in (.2,.4,.6,.8))
             if mode=="wall":points.extend((0.,i*.08,z) for i in range(-18,19) for z in (.2,.4,.6,.8))
+            if mode=="removed":
+                # Positive rays through every old wall endpoint clear its
+                # occupancy; silence/occlusion must not erase obstacles.
+                points.extend((4.,i*.08*(5.5/1.5)+dy,.65+(z-.65)*(5.5/1.5)+dz)
+                              for i in range(-18,19) for z in (.2,.4,.6,.8)
+                              for dy in (-.02,0.,.02) for dz in (-.02,0.,.02))
             # Origin is (-1.5,0,.65); publish actual sensor-frame coordinates.
             data=b"".join(struct.pack("fff",x+1.5,y,z-.65) for x,y,z in points)
             cloud=PointCloud2();cloud.header.stamp=stamp;cloud.header.frame_id="livox_frame"
@@ -85,6 +93,18 @@ def test_live_replanning_and_invalidations(monkeypatch, tmp_path):
         assert not statuses[-1]["valid"]
         goal=PoseStamped();goal.header.frame_id="map";goal.pose.position.x=1.5;goal.pose.orientation.w=1.
         goal_pub.publish(goal)
+        if budget<.001:
+            assert until(lambda:statuses[-1]['state']=='planning_budget_exceeded'),statuses[-1]
+            assert statuses[-1]['last_processing_ms']<200
+            cancel=node.create_client(Trigger,'/local_navigation/cancel')
+            assert until(cancel.service_is_ready)
+            before=time.monotonic();future=cancel.call_async(Trigger.Request())
+            assert until(future.done) and future.result().success
+            assert time.monotonic()-before<1
+            # A new goal is still processed after the cancelled search.
+            index=len(statuses);goal.pose.position.x=.8;goal_pub.publish(goal)
+            assert until(lambda:any(r['state']=='planning_budget_exceeded' for r in statuses[index:]))
+            return
         assert until(lambda:statuses[-1]["valid"] and paths and paths[-1].poses),statuses[-1]
         mode="obstacle"
         assert until(lambda:statuses[-1]["valid"] and statuses[-1]["novel_obstacles"]>0),statuses[-1]
@@ -96,6 +116,9 @@ def test_live_replanning_and_invalidations(monkeypatch, tmp_path):
         assert statuses[-1]["novel_obstacles"]>0
         assert until(lambda:paths and not paths[-1].poses and local and not local[-1].poses)
         assert statuses[-1]["stop_required"]
+        mode="removed"
+        assert until(lambda:statuses[-1]["valid"] and paths[-1].poses),statuses[-1]
+        assert not statuses[-1]["stop_required"]
         located=False
         assert until(lambda:not statuses[-1]["valid"] and statuses[-1]["state"].startswith("localization"))
         located=True;same=False;start=len(statuses)

@@ -32,7 +32,7 @@ void MapLocalizer::run() {
           else if (command.kind==Kind::Reset) {if (engine) engine->reset(); seed.reset(); previous_odom.reset();}
           else if (command.kind==Kind::Relocalize) {if (engine) engine->relocalize();}
           else if (command.kind==Kind::GlobalRelocalize) {if(engine)engine->globalRelocalize();seed.reset();}
-          else if (engine) engine->invalidate("stale_data");
+          else if (engine) engine->invalidate(command.reason.empty()?"stale_data":command.reason);
         }
         if (!engine) {
           std::lock_guard<std::mutex> lock(mutex_);
@@ -44,8 +44,6 @@ void MapLocalizer::run() {
           if (now().seconds()-stamp > max_scan_age_) {engine->invalidate("stale_scan");}
           else {
             const auto odom_to_base=lookup(odom_frame_,base_frame_,cloud->header.stamp);
-            if (previous_odom && stamp-previous_stamp>timeout_)
-              engine->invalidate("scan_gap");
             if (previous_odom && (stamp<=previous_stamp ||
                 (odom_to_base.translation()-previous_odom->translation()).norm()>odom_jump_+odom_speed_*(stamp-previous_stamp) ||
                 rotationDistance(odom_to_base,*previous_odom)>.2+odom_rotation_*(stamp-previous_stamp))) {
@@ -61,7 +59,17 @@ void MapLocalizer::run() {
               auto scan=std::make_shared<LocalizationCloud>(); pcl::fromROSMsg(*cloud,*scan);
               LocalizationCloud body_scan;
               pcl::transformPointCloud(*scan,body_scan,lookup(base_frame_,cloud_frame_,cloud->header.stamp).matrix().cast<float>());
+              {std::lock_guard<std::mutex> lock(mutex_);registration_running_=true;
+                const auto &s=engine->status();
+                const bool global_search=s.state==LocalizationState::GlobalRelocalizing||
+                  (options_.global.enabled&&options_.global.on_lost&&options_.automatic_recovery&&s.state==LocalizationState::Lost&&
+                   s.failures>=options_.failures_to_lost+options_.global.failures_before_global);
+                if(global_search&&global_timing_state_!="running"){
+                  global_started_=Steady::now();global_duration_ms_=0;global_timing_state_="running";
+                }
+              }
               engine->update(body_scan.makeShared(),odom_to_base);
+              {std::lock_guard<std::mutex> lock(mutex_);registration_running_=false;}
               if (now().seconds()-stamp>max_result_age_) engine->invalidate("registration_result_too_old");
             }
           }
@@ -71,6 +79,9 @@ void MapLocalizer::run() {
           std::lock_guard<std::mutex> lock(mutex_);
           if (generation==generation_) {
             public_=state; label_=localizationStateName(state.state); reason_=state.match.reason;
+            if(state.valid&&global_timing_state_=="running"){
+              global_duration_ms_=std::chrono::duration<double,std::milli>(Steady::now()-global_started_).count();global_timing_state_="succeeded";
+            }
             if (cloud && state.valid) valid_receipt_=Steady::now();
           }
         }
@@ -81,6 +92,7 @@ void MapLocalizer::run() {
       } catch (const std::exception &e) {
         if (engine) engine->invalidate(e.what());
         std::lock_guard<std::mutex> lock(mutex_);
+        registration_running_=false;
         if (generation==generation_) {public_.valid=false; if (engine) public_=engine->status();
           label_=engine ? localizationStateName(public_.state) : "map_error"; reason_=e.what();}
         next_frame=Steady::now()+std::chrono::milliseconds(200);

@@ -92,6 +92,20 @@ TEST_F(HttpApi, MapNamesDeletionAndLoadedMapProtection){
   EXPECT_EQ(request("/api/maps/delete",R"({"id":"../outside","confirm":true})").result_int(),400);
 }
 
+TEST_F(HttpApi, NavigationMotionProfilePersistsAndRejectsDeadZoneAndPermissionChanges){
+  auto response=Json::parse(request("/api/settings/navigation").body());
+  auto values=response.at("saved");EXPECT_TRUE(response.at("active").is_null());
+  values["walk_speed"]=.45;values["acceleration"]=.10;
+  const auto saved=request("/api/settings/navigation",values.dump());ASSERT_EQ(saved.result_int(),200)<<saved.body();
+  EXPECT_TRUE(Json::parse(saved.body()).at("restart_required"));
+  EXPECT_DOUBLE_EQ(Json::parse(request("/api/settings/navigation").body())["saved"]["walk_speed"],.45);
+  auto invalid=values;invalid["stair_speed"]=.08;
+  EXPECT_EQ(request("/api/settings/navigation",invalid.dump()).result_int(),400);
+  invalid=values;invalid["calibration_confirmed"]=true;
+  EXPECT_EQ(request("/api/settings/navigation",invalid.dump()).result_int(),400);
+  EXPECT_DOUBLE_EQ(Json::parse(request("/api/settings/navigation").body())["saved"]["walk_speed"],.45);
+}
+
 TEST_F(HttpApi, SavedPcdNamesAndDeletionKeepOtherSessions){
   for(const auto *session:{"one","two"}){fs::create_directories(root/"slam"/session/"time");std::ofstream(root/"slam"/session/"time/cloud.pcd")<<session;}
   EXPECT_EQ(request("/api/slam/pcds/rename",R"({"id":"one/time/cloud.pcd","name":"大厅"})").result_int(),200);
@@ -117,6 +131,13 @@ TEST_F(HttpApi, MapLifecycleUploadPlanningAndVersionChecks) {
   ASSERT_EQ(state["state"], "complete") << state;
   auto map = Json::parse(request("/api/map").body());
   ASSERT_EQ(map["map_id"], "building"); EXPECT_GT(map["valid_surfaces"].get<int>(), 0);
+  const auto packed=request("/api/map?encoding=float32");
+  ASSERT_EQ(packed.result_int(),200);
+  const auto descriptor=Json::parse(packed["X-Map-Metadata"]);
+  EXPECT_EQ(descriptor["revision"],map["revision"]);
+  EXPECT_EQ(descriptor["cloud_count"],map["cloud"].size());
+  EXPECT_EQ(descriptor["surface_count"],map["surfaces"].size());
+  EXPECT_EQ(packed.body().size(),(map["cloud"].size()*3+map["surfaces"].size()*4)*4);
   Json body = {{"map_id", "building"}, {"revision", map["revision"]},
                {"start", {-1, 0, 0}}, {"goal", {-1, 0, 2.4}}};
   auto planned = request("/api/plan", body.dump());
@@ -128,6 +149,11 @@ TEST_F(HttpApi, MapLifecycleUploadPlanningAndVersionChecks) {
   ASSERT_EQ(inspected.result_int(),200);
   EXPECT_TRUE(Json::parse(inspected.body())["support_valid"].get<bool>());
   EXPECT_TRUE(Json::parse(inspected.body())["body_clear"].get<bool>());
+  // Nearest supported nodes must not hide an unsupported actual ground point.
+  auto actual=inspect;actual["yaw"]=0.;
+  EXPECT_TRUE(Json::parse(request("/api/inspect_surface",actual.dump()).body())["requested_motion_clear"].get<bool>());
+  actual["point"]={-1.,0.,-.25};
+  EXPECT_FALSE(Json::parse(request("/api/inspect_surface",actual.dump()).body())["requested_motion_clear"].get<bool>());
   body["revision"] = "old";
   EXPECT_EQ(request("/api/plan", body.dump()).result_int(), 409);
   auto loaded = finishJob(request("/api/load", R"({"name":"building"})"));

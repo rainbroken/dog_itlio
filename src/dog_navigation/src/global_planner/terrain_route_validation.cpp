@@ -4,10 +4,11 @@
 namespace dog_navigation {
 std::vector<std::pair<int, int>>
 uncertifiedForwardEdges(const dog_terrain::TerrainGraph &graph,
-                        const std::vector<int> &ids) {
+                        const std::vector<int> &ids, const std::function<void()> &checkpoint) {
   double previous = 0;
   std::vector<std::pair<int, int>> invalid;
   for (size_t i = 1; i < ids.size(); ++i) {
+    if(checkpoint)checkpoint();
     const auto &a = graph.nodes().at(ids[i - 1]).point,
                &b = graph.nodes().at(ids[i]).point;
     const auto delta = b - a;

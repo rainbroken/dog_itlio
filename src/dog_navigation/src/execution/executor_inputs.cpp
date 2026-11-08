@@ -4,11 +4,24 @@
 
 namespace dog_navigation {
 void NavigationExecutor::submitPlannerGoal() {
+  if(planner_cleanup_){
+    // A delayed cancellation for the previous task must never clear this
+    // task's newly published goal. Wait asynchronously; never block DDS.
+    if(planner_cleanup_->wait_for(std::chrono::seconds(0))!=std::future_status::ready){
+      planner_goal_deferred_=true;return;
+    }
+    bool cleaned=false;
+    try{cleaned=planner_cleanup_->get()->success;}catch(const std::exception &){}
+    planner_cleanup_.reset();
+    if(!cleaned){planner_goal_deferred_=false;finish(false,"previous_task_cleanup_failed");return;}
+  }
+  planner_goal_deferred_=false;
   goal_.header.frame_id = "map";
   goal_.header.stamp = now();
   goal_pub_->publish(goal_);
   route_.reset();
   route_deadline_ = 0;
+  planner_block_reason_.clear();
   last_request_ = monotonicSeconds();
 }
 void NavigationExecutor::receiveRoute(
@@ -25,6 +38,7 @@ void NavigationExecutor::receiveRoute(
       !std::isfinite(m->valid_for_seconds))
     return;
   if (!m->valid) {
+    planner_block_reason_=m->reason;
     route_.reset();
     route_deadline_ = 0;
     return;
@@ -36,11 +50,12 @@ void NavigationExecutor::receiveRoute(
   for (size_t i = 0; i < m->points.size(); ++i) {
     const auto id = m->node_ids[i];
     const auto &p = m->points[i];
-    if (id < 0 || size_t(id) >= graph_->nodes().size() ||
+    if (id < 0 || size_t(id) >= graph_->nodes().size() || !Point(p.x,p.y,p.z).allFinite()||
         (graph_->nodes()[id].point - Point(p.x, p.y, p.z)).norm() > 1e-5)
       return;
   }
   route_ = m;
+  planner_block_reason_.clear();
   route_deadline_ = monotonicSeconds() +
                     std::max(0., std::min(.6, m->valid_for_seconds) - age);
 }
@@ -67,7 +82,9 @@ TrackingPose NavigationExecutor::readPose(Pose &map_from_odom) {
       throw std::runtime_error("localization_correction_requires_replan");
     }
   }
-  correction_ = map_from_odom;
+  // Keep the installed trajectory's frame as the reference. Updating this on
+  // every tick would hide a series of small corrections with a large total.
+  if(!correction_)correction_ = map_from_odom;
   TrackingPose pose;
   pose.ground = odom_from_body * Point(0, 0, -ground_offset_);
   pose.yaw =
@@ -79,14 +96,18 @@ TrackingPose NavigationExecutor::readPose(Pose &map_from_odom) {
 }
 void NavigationExecutor::finish(bool success, const std::string &reason,
                                 bool cancelled) {
+  if(success)supervisor_.succeed();else if(cancelled)supervisor_.cancel();else supervisor_.abort(reason);
+  RCLCPP_INFO(get_logger(),"Navigation task %s ended: %s; last executor block: %s; last guard block: %s",task_id_.c_str(),reason.c_str(),last_block_reason_.c_str(),last_guard_block_reason_.c_str());
   TrackResult stopped;
   stopped.phase = success ? "succeeded" : cancelled ? "cancelled" : "aborted";
   stopped.reason = reason;
   publishCommand(stopped, false);
   tracker_->stop();
+  planner_goal_deferred_=false;
+  if(planner_cleanup_){planner_cancel_->remove_pending_request(*planner_cleanup_);planner_cleanup_.reset();}
   if (planner_cancel_->service_is_ready())
-    planner_cancel_->async_send_request(
-        std::make_shared<std_srvs::srv::Trigger::Request>());
+    planner_cleanup_.emplace(planner_cancel_->async_send_request(
+        std::make_shared<std_srvs::srv::Trigger::Request>()));
   if (handle_) {
     auto result = std::make_shared<Action::Result>();
     result->success = success;

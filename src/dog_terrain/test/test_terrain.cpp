@@ -23,6 +23,17 @@ TEST(Collision, OrientedBoxUsesFullCornersAndContinuousTranslation) {
   EXPECT_TRUE(sweptBoxContact(zero,zero,{.4,0,.4},pi/4,.33,.29,.3,.5));
 }
 
+TEST(Collision, TurningBoxCoversIntermediateCornerAndKeepsStraightSideClear) {
+  const Eigen::Vector3d zero=Eigen::Vector3d::Zero(),obstacle(0,.60,.4);
+  constexpr double pi=3.14159265358979323846;
+  EXPECT_FALSE(sweptBoxContact(zero,zero,obstacle,0,.5366,.4966,.07,.67));
+  EXPECT_FALSE(sweptBoxContact(zero,zero,obstacle,pi/2,.5366,.4966,.07,.67));
+  EXPECT_TRUE(sweptTurningBoxContact(zero,zero,obstacle,0,pi/2,.5366,.4966,.07,.67));
+  EXPECT_FALSE(sweptTurningBoxContact({-.5,0,0},{.5,0,0},obstacle,0,0,.5366,.4966,.07,.67));
+  EXPECT_TRUE(sweptCylinderContact({-.5,0,0},{.5,0,0},obstacle,.646,.07,.67));
+  EXPECT_TRUE(sweptTurningBoxContact(zero,zero,obstacle,pi/2,0,.5366,.4966,.07,.67));
+}
+
 namespace {
 void plane(Cloud &cloud, double x0, double x1, double z = 0, double y0 = -.6, double y1 = .6) {
   for (double x = x0 + .015; x < x1; x += .035)
@@ -76,6 +87,12 @@ TEST(RectangularTerrain, SearchWorkspacePreservesRoutesAndReevaluatesOverlayWeig
   const int platform=graph.snap({2.8,1.2,1.2});
   EXPECT_EQ(searchGraph(graph,source,platform,{},&workspace).ids,searchGraph(graph,source,platform).ids);
   EXPECT_EQ(workspace.counters().lower_bound_builds,2u);
+  // Interrupt a heuristic rebuild for another goal, then revisit the cached
+  // previous goal. A partially written lower-bound array must not be reused.
+  int checkpoints=0;
+  EXPECT_THROW(workspace.lowerBounds(target,[&]{if(++checkpoints>=5)throw SearchInterrupted();}),SearchInterrupted);
+  EXPECT_EQ(searchGraph(graph,source,platform,{},&workspace).ids,searchGraph(graph,source,platform).ids);
+  EXPECT_EQ(searchGraph(graph,source,target,{},&workspace).ids,expected.ids);
   auto other=TerrainGraph::fromCache(graph.cloud().makeShared(),graph.cache());
   EXPECT_THROW(searchGraph(*other,source,target,{},&workspace),std::invalid_argument);
 }
@@ -97,6 +114,10 @@ TEST(RectangularTerrain, RejectedLazyTurnDoesNotHideAnotherArrivalAtSameEdge) {
   EXPECT_FALSE(graph->turnClear(1,3,4));EXPECT_TRUE(graph->turnClear(2,3,4));
   const auto result=searchGraph(*graph,0,4);
   EXPECT_EQ(result.ids,(std::vector<int>{0,2,3,4}));EXPECT_DOUBLE_EQ(result.cost,5.);
+  const auto candidate=searchNodeGraph(*graph,0,4);
+  EXPECT_EQ(candidate.ids,(std::vector<int>{0,1,3,4}));
+  EXPECT_FALSE(graph->turnClear(candidate.ids[1],candidate.ids[2],candidate.ids[3]));
+  EXPECT_THROW(searchNodeGraph(*graph,0,4,{},nullptr,{},0.),std::invalid_argument);
   EXPECT_THROW(searchGraph(*graph,0,4,[](int from,const Edge &edge) {
     return from==0&&edge.target==2?std::numeric_limits<double>::infinity():edge.cost;
   }),std::invalid_argument);

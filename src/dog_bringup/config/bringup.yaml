@@ -1,8 +1,8 @@
 # 启动级配置（非 ROS 节点参数）。命令行 key:=value 优先于此文件。
 bringup:
   # —— 启动模式与硬件开关 ——
-  mode: mapping                 # mapping：网页手动启动建图；navigation：已有地图定位与规划
-  execute: false                # 开启执行节点；硬件输出还需 execution.yaml 的标定确认
+  mode: navigation              # mapping：网页手动启动建图；navigation：已有地图定位与规划
+  execute: true                # 开启执行节点；硬件输出还需 execution.yaml 的标定确认
   execution_config: ""
   lidar: true                   # 启动 MID360s，已有外部驱动或回放时关闭
   driver: true                  # 启动机器狗驱动；需要机器人网络连通才会控制就绪
@@ -23,7 +23,7 @@ bringup:
   motion_config: "/home/yuling/dog_itlio/data/config/motion.json"  # 网页速度设置，保存后重启自动恢复
 
   # —— 已有地图定位与规划 ——
-  map_id: saved_20261107_170227   # 基于指定 71935 点 cloud.pcd 生成的地图项目
+  map_id: floor_support_r010_v5   # 与网页当前加载的地图项目一致；显示名不作为地图身份
   start_lio: true                # 仅 navigation 模式使用；mapping 由网页启动 LIO
   # —— 模块配置入口 ——
   # 留空使用各包默认配置；相对路径以本 YAML 所在目录为基准。

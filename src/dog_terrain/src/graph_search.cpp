@@ -9,7 +9,11 @@
 
 namespace dog_terrain {
 GraphRoute searchGraph(const TerrainGraph &graph, int source, int target, const EdgeCost &weight,
-                       GraphSearchWorkspace *workspace) {
+                       GraphSearchWorkspace *workspace, const SearchCheckpoint &checkpoint,
+                       const TransitionClear &transition_clear,double heuristic_weight) {
+  if(!std::isfinite(heuristic_weight)||heuristic_weight<1.||heuristic_weight>5.)
+    throw std::invalid_argument("Invalid graph heuristic weight");
+  if(checkpoint)checkpoint();
   const auto &nodes = graph.nodes();
   if (source < 0 || target < 0 || size_t(source) >= nodes.size() || size_t(target) >= nodes.size() ||
       !nodes[source].valid || !nodes[target].valid)
@@ -23,7 +27,7 @@ GraphRoute searchGraph(const TerrainGraph &graph, int source, int target, const 
     // Exact obstacle-free graph costs are a much tighter admissible heuristic
     // than Euclidean distance when clearance/stair penalties dominate. Compute
     // on reversed base edges; overlays can only increase these costs.
-    const auto &lower=workspace->lowerBounds(target);
+    const auto &lower=workspace->lowerBounds(target,checkpoint);
     // Incoming direction is part of the state. Endpoint headings are free.
     struct State {int previous,current,parent;double cost;bool stairs;};
     std::vector<State> states{{-1,source,-1,0,false}};
@@ -31,9 +35,10 @@ GraphRoute searchGraph(const TerrainGraph &graph, int source, int target, const 
     auto key=[&](int previous,int current){return uint64_t(previous+1)*nodes.size()+current;};
     using Item=std::pair<double,size_t>;
     std::priority_queue<Item,std::vector<Item>,std::greater<Item>> pending;
-    pending.emplace(lower[source],0);
+    pending.emplace(heuristic_weight*lower[source],0);
     int finish=-1;
     while(!pending.empty()) {
+      if(checkpoint)checkpoint();
       const size_t id=pending.top().second;pending.pop();
       const State state=states[id];
       const auto settled=best.find(key(state.previous,state.current));
@@ -44,11 +49,13 @@ GraphRoute searchGraph(const TerrainGraph &graph, int source, int target, const 
       // at its previous node may reach it with a different, feasible turn.
       if(state.parent>=0) {
         const auto &parent=states[state.parent];
+        if(transition_clear&&!transition_clear(parent.previous,parent.current,state.current))continue;
         if(!workspace->turnClear(parent.previous,parent.current,state.current))continue;
       }
       best[key(state.previous,state.current)]=id;
       if(state.current==target){finish=int(id);break;}
       for(const auto &edge:graph.edges()[state.current]) {
+        if(checkpoint)checkpoint();
         const double cost=weight ? weight(state.current,edge) : edge.cost;
         if(std::isinf(cost)&&cost>0)continue;
         if(!std::isfinite(cost)||cost<edge.cost)
@@ -59,7 +66,7 @@ GraphRoute searchGraph(const TerrainGraph &graph, int source, int target, const 
         if(existing!=best.end()&&states[existing->second].cost<=candidate)continue;
         const size_t next=states.size();
         states.push_back({state.current,edge.target,int(id),candidate,edge.stairs});
-        pending.emplace(candidate+lower[edge.target],next);
+        pending.emplace(candidate+heuristic_weight*lower[edge.target],next);
       }
     }
     if(finish<0)throw std::invalid_argument("No footprint-safe route including turns");
@@ -72,6 +79,20 @@ GraphRoute searchGraph(const TerrainGraph &graph, int source, int target, const 
     std::reverse(route.stairs.begin(),route.stairs.end());
     return route;
   }
+  return searchNodeGraph(graph,source,target,weight,workspace,checkpoint,heuristic_weight);
+}
+GraphRoute searchNodeGraph(const TerrainGraph &graph,int source,int target,const EdgeCost &weight,
+                           GraphSearchWorkspace *workspace,const SearchCheckpoint &checkpoint,double heuristic_weight) {
+  if(checkpoint)checkpoint();
+  const auto &nodes=graph.nodes();
+  if(!std::isfinite(heuristic_weight)||heuristic_weight<1.||heuristic_weight>5.||
+     source<0||target<0||size_t(source)>=nodes.size()||size_t(target)>=nodes.size()||
+     !nodes[source].valid||!nodes[target].valid)
+    throw std::invalid_argument("Invalid graph search candidate input");
+  if(workspace&&!workspace->matches(graph))throw std::invalid_argument("Search workspace belongs to a different graph");
+  if(nodes[source].component!=nodes[target].component)
+    throw std::invalid_argument("No observed traversable connection between these surfaces/floors");
+  const std::vector<double> *lower=graph.config().body_length>0&&workspace?&workspace->lowerBounds(target,checkpoint):nullptr;
   std::vector<double> costs(nodes.size(), std::numeric_limits<double>::infinity());
   std::vector<int> parent(nodes.size(), -1);
   std::vector<bool> closed(nodes.size()), parent_step(nodes.size());
@@ -79,11 +100,13 @@ GraphRoute searchGraph(const TerrainGraph &graph, int source, int target, const 
   std::priority_queue<Item, std::vector<Item>, std::greater<Item>> queue;
   costs[source] = 0; queue.emplace(0, source);
   while (!queue.empty()) {
+    if(checkpoint)checkpoint();
     const int current = queue.top().second; queue.pop();
     if (closed[current]) continue;
     if (current == target) break;
     closed[current] = true;
     for (const auto &edge : graph.edges()[current]) {
+      if(checkpoint)checkpoint();
       if (closed[edge.target]) continue;
       const double cost = weight ? weight(current, edge) : edge.cost;
       if (std::isinf(cost) && cost > 0) continue;
@@ -92,7 +115,7 @@ GraphRoute searchGraph(const TerrainGraph &graph, int source, int target, const 
       const double candidate = costs[current] + cost;
       if (candidate < costs[edge.target]) {
         costs[edge.target] = candidate; parent[edge.target] = current; parent_step[edge.target] = edge.stairs;
-        queue.emplace(candidate + (nodes[edge.target].point - nodes[target].point).norm(), edge.target);
+        queue.emplace(candidate + heuristic_weight*(lower?lower->at(edge.target):(nodes[edge.target].point - nodes[target].point).norm()), edge.target);
       }
     }
   }

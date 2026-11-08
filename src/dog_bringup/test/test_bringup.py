@@ -28,6 +28,7 @@ def test_mapping_is_deferred_until_web_request_and_shuts_down(tmp_path, monkeypa
     with log_path.open('w') as log:
         process = subprocess.Popen([
             'ros2', 'launch', 'dog_bringup', 'dog_bringup.launch.py',
+            'mode:=mapping',
             'lidar:=false', 'driver:=false', f'port:={port}',
             f'map_root:={tmp_path / "maps"}', f'slam_output:={tmp_path / "slam"}',
             f'motion_config:={tmp_path / "motion.json"}',

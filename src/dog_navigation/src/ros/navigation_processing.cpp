@@ -1,5 +1,6 @@
 #include "local_navigation_node.hpp"
 #include "../common/navigation_ros.hpp"
+#include "dog_terrain/graph_search.hpp"
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_types.h>
 
@@ -50,12 +51,20 @@ void LocalNavigation::tick() {
       const Pose map_from_body=map_from_odom*transform(odom.transform);
       // Offset is a body-fixed vector, retaining full roll/pitch on slopes.
       const Point ground=map_from_body*Point(0,0,-ground_offset_);
-      auto route=planner_->plan(ground,*goal_,memory_->points(),map_from_odom);
+      const auto deadline=begin+std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(budget_));
+      auto route=planner_->plan(ground,*goal_,memory_->points(),map_from_odom,[&]{
+        if(Clock::now()>=deadline)throw dog_terrain::SearchInterrupted();
+      });
       duration_ms_=elapsed(begin)*1000;
       if(elapsed(begin)>budget_||now().seconds()-memory_->stamp()>timeout_||
           !gate_->ready(Clock::now())||now().seconds()>tf_expiry_){invalidate("processing_or_data_expired");return;}
-      ++generation_;
       if(!route.valid){invalidate(route.reason,route);return;}
+      // A lease/obstacle refresh of the same geometric route is not a new
+      // controller trajectory. Invalid input always breaks this continuity.
+      if(!route_generation_valid_||generation_ids_!=route.ids||generation_stairs_!=route.stairs||generation_goal_stamp_!=goal_stamp_){
+        ++generation_;generation_ids_=route.ids;generation_stairs_=route.stairs;generation_goal_stamp_=goal_stamp_;
+      }
+      route_generation_valid_=true;
       // The executor confirms metric XYZ/yaw and measured stop, not graph-node identity.
       // Paths contain terrain contact positions, not body poses or velocity commands.
       route_stamp_=now();
@@ -63,6 +72,9 @@ void LocalNavigation::tick() {
       pcl::PointCloud<pcl::PointXYZ> obstacles;for(const auto &p:route.obstacles_map)obstacles.push_back(pcl::PointXYZ(p.x(),p.y(),p.z()));
       sensor_msgs::msg::PointCloud2 obs;pcl::toROSMsg(obstacles,obs);obs.header=scan_header_;obs.header.frame_id=map_frame_;
       obstacle_pub_->publish(obs);status(route.ids.size()==1?"goal_reached":"route_ready",true,route);
+    }catch(const dog_terrain::SearchInterrupted &e){
+      duration_ms_=elapsed(begin)*1000;
+      invalidate(e.what());
     }catch(const std::exception &e){scan_valid_=false;invalidate(e.what());}
   }
 }  // namespace dog_navigation

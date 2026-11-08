@@ -29,7 +29,7 @@ public:
   ~MapLocalizer() override;
 private:
   enum class Kind {Load, Seed, Relocalize, GlobalRelocalize, Reset, Invalidate};
-  struct Command {Kind kind=Kind::Reset; std::string path; Pose3 seed=Pose3::Identity(); builtin_interfaces::msg::Time stamp;};
+  struct Command {Kind kind=Kind::Reset; std::string path,reason; Pose3 seed=Pose3::Identity(); builtin_interfaces::msg::Time stamp;};
 
   void configureParameters();
   void enqueue(Command c, const std::string &label);
@@ -43,9 +43,10 @@ private:
   std::string map_frame_,odom_frame_,base_frame_,cloud_frame_,cloud_topic_,loaded_path_;
   double rate_,timeout_,max_scan_age_,max_result_age_,recovery_interval_,odom_jump_,odom_speed_,odom_rotation_;
   double global_retry_interval_=3;
-  std::mutex mutex_; std::condition_variable condition_; std::thread worker_; bool stopping_=false,map_ready_=false;
+  std::mutex mutex_; std::condition_variable condition_; std::thread worker_; bool stopping_=false,map_ready_=false,registration_running_=false;
   uint64_t generation_=0; std::deque<Command> commands_; sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud_;
   double last_received_stamp_=0; Steady::time_point input_receipt_,valid_receipt_;
+  Steady::time_point global_started_{};double global_duration_ms_=0;std::string global_timing_state_="idle";
   LocalizationUpdate public_; std::string label_="no_map",reason_="not_initialized";
   std::unique_ptr<tf2_ros::Buffer> buffer_; std::unique_ptr<tf2_ros::TransformListener> listener_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> broadcaster_;

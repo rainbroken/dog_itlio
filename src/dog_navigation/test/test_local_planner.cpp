@@ -1,6 +1,9 @@
 #include "dog_navigation/local_planner.hpp"
 #include "dog_navigation/localization_gate.hpp"
+#include "dog_navigation/braking_certificate.hpp"
 #include "dog_terrain/terrain_graph.hpp"
+#include "dog_terrain/graph_search.hpp"
+#include "dog_terrain/collision_geometry.hpp"
 #include "../src/local_planner/collision_overlay.hpp"
 #include <gtest/gtest.h>
 #include <filesystem>
@@ -29,6 +32,19 @@ std::shared_ptr<dog_terrain::TerrainGraph> floorGraph(bool upper=false,bool room
 }
 Points obstacle() {Points out;for(double z=.2;z<.9;z+=.1)out.emplace_back(0,0,z);return out;}
 }
+TEST(LocalPlanner, ScaledBrakingCurveCannotReplaceTheExactCommandCertificate) {
+  const auto graph=floorGraph();const Velocity actual{.3,0,.5},reserve{.336,0,.56};
+  const Point contact=brakingSweep(actual,.15,.5).back().point;
+  // A small toy obstacle on the actual centerline is missed by the scaled
+  // curve. This is a geometric non-containment regression, not robot sizing.
+  const auto live=[&](const Point &a,const Point &b,double,double){
+    return !dog_terrain::sweptCylinderContact(a,b,contact,.002,-.1,.1);
+  };
+  const Points route{{0,0,0},{1,0,0}};
+  EXPECT_TRUE(certifyBraking(*graph,Point::Zero(),0,reserve,route,.15,.5,live));
+  EXPECT_FALSE(certifyBraking(*graph,Point::Zero(),0,actual,route,.15,.5,live));
+  EXPECT_FALSE(certifyTrackingBraking(*graph,Point::Zero(),0,actual,route,.15,.5,live));
+}
 TEST(LocalPlanner, LiveOverlayRejectsGrazingObstacleBetweenRiskSamples) {
   Options options;options.voxel=.06;options.padding=0;
   const double radius=.22+options.voxel*.866025404;
@@ -36,6 +52,24 @@ TEST(LocalPlanner, LiveOverlayRejectsGrazingObstacleBetweenRiskSamples) {
   for(int i=0;i<=5;++i)EXPECT_GE(overlay.risk(Point(i*.03,0,0)),0);
   EXPECT_LT(overlay.edgeRisk(Point(0,0,0),Point(.15,0,0)),0);
   EXPECT_LT(overlay.edgeRisk(Point(.15,0,0),Point(0,0,0)),0);
+}
+TEST(LocalPlanner, RectangularOverlayDoesNotTreatSafeSideClearanceAsCircularCollision) {
+  Options options;const Point a(-.5,0,0),b(.5,0,0);
+  CollisionOverlay box({Point(0,.60,.4)},options,std::hypot(.66,.58)*.5,.5,.66,.58);
+  EXPECT_GE(box.risk(Point::Zero()),0);
+  EXPECT_GE(box.edgeRisk(a,b),0);
+  EXPECT_FALSE(box.motionClear(Point::Zero(),Point::Zero(),0,3.14159265358979323846/2));
+  CollisionOverlay cylinder({Point(0,.60,.4)},options,std::hypot(.66,.58)*.5,.5);
+  EXPECT_LT(cylinder.edgeRisk(a,b),0);
+}
+TEST(LocalPlanner, InterruptedSearchDoesNotBecomePermanentNoRouteOrBlockNextGoal) {
+  auto graph=floorGraph();LocalPlanner planner(graph);
+  const Point start(-1.5,0,0),goal(1.5,0,0),second(.8,0,0);
+  EXPECT_THROW(planner.plan(start,goal,{},Pose::Identity(),[]{throw dog_terrain::SearchInterrupted();}),dog_terrain::SearchInterrupted);
+  auto route=planner.plan(start,goal,{},Pose::Identity());ASSERT_TRUE(route.valid)<<route.reason;
+  EXPECT_THROW(planner.plan(start,second,{},Pose::Identity(),[]{throw dog_terrain::SearchInterrupted();}),dog_terrain::SearchInterrupted);
+  route=planner.plan(start,second,{},Pose::Identity());EXPECT_TRUE(route.valid)<<route.reason;
+  route=planner.plan(start,goal,{},Pose::Identity());EXPECT_TRUE(route.valid)<<route.reason;
 }
 TEST(LocalPlanner, ReplansAroundNewObstacleAndKeepsHeights) {
   auto graph=floorGraph(true);LocalPlanner planner(graph);
@@ -57,6 +91,68 @@ TEST(LocalPlanner, ReplansAroundNewObstacleAndKeepsHeights) {
   ASSERT_TRUE(upper.valid)<<upper.reason;
   for(const auto &p:upper.points)EXPECT_NEAR(p.z(),2.4,1e-5);
   EXPECT_FALSE(planner.plan(start,{1.5,0,2.4},{},Pose::Identity()).valid);
+}
+TEST(LocalPlanner, RectangularRobotReplansWhenBoxAppearsOnCachedRoute) {
+  auto base=floorGraph();dog_terrain::Config config;
+  config.body_length=.66;config.body_width=.58;config.body_top=.5;
+  auto graph=std::make_shared<dog_terrain::TerrainGraph>(base->cloud().makeShared(),config);
+  LocalPlanner planner(graph);const Point start(-1.4,0,0),goal(1.4,0,0);
+  ASSERT_TRUE(planner.plan(start,goal,{},Pose::Identity()).valid);
+  Points box;
+  for(double x=-.15;x<=.15;x+=.1)for(double y=-.15;y<=.15;y+=.1)
+    for(double z=.2;z<=.5;z+=.1)box.emplace_back(x,y,z);
+  for(int refresh=0;refresh<3;++refresh){
+    const auto begin=std::chrono::steady_clock::now();
+    Route route;
+    ASSERT_NO_THROW(route=planner.plan(start,goal,box,Pose::Identity(),[&]{
+      if(std::chrono::steady_clock::now()-begin>std::chrono::milliseconds(400))
+        throw dog_terrain::SearchInterrupted();
+    }));
+    ASSERT_TRUE(route.valid)<<route.reason;
+    CollisionOverlay overlay(box,Options(),std::hypot(.66,.58)*.5,.5,.66,.58);
+    for(size_t i=1;i<route.points.size();++i)EXPECT_GE(overlay.edgeRisk(route.points[i-1],route.points[i]),0);
+  }
+  EXPECT_TRUE(planner.plan(start,goal,{},Pose::Identity()).valid);
+}
+TEST(LocalPlanner, CheckedWalkChordsReduceGraphZigzagsAndRemainObstacleFree) {
+  auto graph=floorGraph();LocalPlanner planner(graph);
+  const Point start(-1.5,-.2,0),goal(1.5,.2,0);
+  auto route=planner.plan(start,goal,{},Pose::Identity());ASSERT_TRUE(route.valid)<<route.reason;
+  EXPECT_LE(route.points.size(),4u);
+  auto blocked=planner.plan(start,goal,obstacle(),Pose::Identity());ASSERT_TRUE(blocked.valid)<<blocked.reason;
+  CollisionOverlay overlay(obstacle(),Options(),graph->config().body_radius,graph->config().body_top);
+  for(size_t i=1;i<blocked.points.size();++i){
+    const Point a=blocked.points[i-1],b=blocked.points[i],d=b-a;
+    const double yaw=std::atan2(d.y(),d.x());
+    EXPECT_GE(overlay.edgeRisk(a,b),0);EXPECT_TRUE(graph->motionClear(a,b,yaw,yaw));
+    EXPECT_DOUBLE_EQ(a.z(),0);
+  }
+  // An unchanged scene and stationary start must retain the same certified
+  // detour, rather than shaving more clearance from it on every refresh.
+  for(int refresh=0;refresh<5;++refresh){
+    const auto next=planner.plan(start,goal,obstacle(),Pose::Identity());
+    ASSERT_TRUE(next.valid)<<next.reason;EXPECT_EQ(next.ids,blocked.ids);
+  }
+}
+TEST(LocalPlanner, RectangularChordsAreCertifiedAndReusedBetweenGraphEndpoints) {
+  auto base=floorGraph();dog_terrain::Config config;
+  config.body_length=.66;config.body_width=.58;config.body_top=.5;
+  auto graph=std::make_shared<dog_terrain::TerrainGraph>(base->cloud().makeShared(),config);
+  LocalPlanner planner(graph);const Points obstacles{{0,.65,.4}};
+  auto route=planner.plan({-1.4,-.2,0},{1.4,.2,0},obstacles,Pose::Identity());
+  ASSERT_TRUE(route.valid)<<route.reason;ASSERT_GT(route.points.size(),1u);
+  CollisionOverlay overlay(obstacles,Options(),std::hypot(.66,.58)*.5,.5,.66,.58);
+  double previous=0;
+  for(size_t i=1;i<route.points.size();++i){
+    const Point a=route.points[i-1],b=route.points[i],d=b-a;const double yaw=std::atan2(d.y(),d.x());
+    EXPECT_TRUE(graph->motionClear(a,b,yaw,yaw));EXPECT_TRUE(overlay.motionClear(a,b,yaw,yaw));
+    if(i>1){EXPECT_TRUE(graph->motionClear(a,a,previous,yaw));EXPECT_TRUE(overlay.motionClear(a,a,previous,yaw));}
+    previous=yaw;
+  }
+  const Point between=route.points[0]*.75+route.points[1]*.25;
+  auto refreshed=planner.plan(between,{1.4,.2,0},obstacles,Pose::Identity());
+  EXPECT_TRUE(refreshed.valid)<<refreshed.reason;
+  EXPECT_DOUBLE_EQ(planner.performance().search_ms,0.);
 }
 TEST(LocalPlanner, BlockageNeverReturnsOldRoute) {
   auto graph=floorGraph();LocalPlanner planner(graph);Points wall;
@@ -94,6 +190,14 @@ TEST(ObstacleMemory, PositiveRaysClearAndOcclusionRetains) {
   memory.clear();EXPECT_EQ(memory.size(),0u);
 }
 
+TEST(ObstacleMemory, FreeRayClearsShortVoxelIntersection) {
+  ObstacleMemory memory;const Point sensor(.01,.01,.5);
+  const Point removed(.395959595959596,.2020100502512563,.5);
+  memory.update(sensor,{removed,Point(0,2,.5),Point(0,-2,.5)},1,sensor);
+  memory.update(sensor,{Point(2,1,.5),Point(0,2,.5),Point(0,-2,.5)},2,sensor);
+  const auto points=memory.points();
+  EXPECT_FALSE(std::any_of(points.begin(),points.end(),[&](const Point &p){return p.isApprox(removed);}));
+}
 TEST(ObstacleMemory, OccupiedEndpointsWinRegardlessOfFreeRayOrder) {
   const Point sensor(0,0,0);Points first{{1,0,0},{2,0,0},{2,1,0},{2,-1,0}};
   Points reverse(first.rbegin(),first.rend());ObstacleMemory a,b;

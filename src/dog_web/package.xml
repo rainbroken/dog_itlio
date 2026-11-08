@@ -4,7 +4,7 @@
   <description>Local 3D point-cloud map and multi-floor planning preview.</description>
   <maintainer email="yuling@example.com">yuling</maintainer><license>Apache-2.0</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <depend>dog_terrain</depend><depend>ament_index_cpp</depend>
+  <depend>dog_terrain</depend><depend>dog_navigation</depend><depend>ament_index_cpp</depend>
   <depend>boost</depend><depend>nlohmann-json-dev</depend>
   <depend>rclcpp</depend><depend>dog_interfaces</depend><depend>sensor_msgs</depend>
   <depend>nav_msgs</depend><depend>geometry_msgs</depend><depend>diagnostic_msgs</depend>

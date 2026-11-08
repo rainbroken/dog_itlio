@@ -78,6 +78,7 @@ public:
   const NominalState & initializedState() const {return initialized_state_;}
 
 private:
+  void accumulate(const sensor::ImuData & sample);
   void updateStatistics();
   bool stationary() const;
   bool initializeFromWindow();
@@ -88,11 +89,9 @@ private:
   double last_timestamp_{0.0};
   double window_end_timestamp_{0.0};
   bool has_timestamp_{false};
-  Eigen::Vector3d sum_gyro_{Eigen::Vector3d::Zero()};
-  Eigen::Vector3d sum_accel_{Eigen::Vector3d::Zero()};
   Eigen::Vector3d sum_accel_direction_{Eigen::Vector3d::Zero()};
-  Eigen::Vector3d sum_sq_gyro_{Eigen::Vector3d::Zero()};
-  Eigen::Vector3d sum_sq_accel_{Eigen::Vector3d::Zero()};
+  Eigen::Vector3d gyro_m2_{Eigen::Vector3d::Zero()};
+  Eigen::Vector3d accel_m2_{Eigen::Vector3d::Zero()};
   std::size_t sample_count_{0U};
   ImuInitializationStats stats_;
   NominalState initialized_state_;
