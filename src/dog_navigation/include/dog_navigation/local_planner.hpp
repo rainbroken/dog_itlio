@@ -18,6 +18,8 @@ struct Route {
 
 // Plans only on prevalidated 3D terrain connections. A live obstacle overlay
 // may remove connections, never invent support or connect unknown floors.
+// Historical API name retained: global_planner/terrain_planner.cpp searches the
+// full route, using local_planner obstacle overlay and certified path prefix.
 class LocalPlanner {
 public:
   explicit LocalPlanner(std::shared_ptr<const dog_terrain::TerrainGraph> graph, Options options = {});

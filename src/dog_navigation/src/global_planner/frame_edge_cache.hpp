@@ -1,5 +1,5 @@
 #pragma once
-#include "collision_overlay.hpp"
+#include "../local_planner/collision_overlay.hpp"
 #include "dog_navigation/planning_performance.hpp"
 #include "dog_terrain/terrain_graph.hpp"
 #include <unordered_map>

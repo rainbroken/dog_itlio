@@ -7,6 +7,9 @@ bool VelocityGuard::fresh(const builtin_interfaces::msg::Time &stamp,
   return age >= -.05 && age <= maximum;
 }
 VelocityGuard::VelocityGuard() : Node("velocity_guard") {
+  const double frequency = declare_parameter<double>("guard_frequency", 50.);
+  if (!std::isfinite(frequency) || frequency <= 0 || 1. / frequency >= .15)
+    throw std::invalid_argument("guard_frequency must be finite with period < 0.15 s (braking reaction horizon)");
   const bool requested = declare_parameter<bool>("allow_autonomous", false);
   const bool calibrated =
       declare_parameter<bool>("calibration_confirmed", false);
@@ -111,7 +114,7 @@ VelocityGuard::VelocityGuard() : Node("velocity_guard") {
                          ? "Stop latched; clearing requires measured standstill"
                          : "Stop cleared; old task remains revoked";
       });
-  timer_ = create_wall_timer(std::chrono::milliseconds(20), [this] { tick(); });
+  timer_ = create_wall_timer(std::chrono::duration<double>(1. / frequency), [this] { tick(); });
 }
 void VelocityGuard::command(
     dog_interfaces::msg::NavigationCommand::ConstSharedPtr m) {

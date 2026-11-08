@@ -1,7 +1,7 @@
 #include "dog_navigation/local_planner.hpp"
 #include "dog_navigation/localization_gate.hpp"
 #include "dog_terrain/terrain_graph.hpp"
-#include "../src/collision_overlay.hpp"
+#include "../src/local_planner/collision_overlay.hpp"
 #include <gtest/gtest.h>
 #include <filesystem>
 #include <chrono>

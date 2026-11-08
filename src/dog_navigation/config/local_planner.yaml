@@ -1,0 +1,32 @@
+# 局部障碍感知、已校验路径截取及轨迹跟踪。长度 m、时间 s。
+local_navigation:
+  ros__parameters:
+    # —— 实时点云与体素障碍层 ——
+    voxel: 0.10                 # 体素分辨率
+    range: 8.0                  # 射线最大距离与障碍记忆的水平保留范围
+    vertical_range: 4.0         # 垂直处理范围，保留多层高度信息
+    min_range: 0.4              # 雷达近场过滤距离
+    padding: 0.12               # 动态障碍额外间隙
+    obstacle_bottom: 0.12       # 地表之上的障碍判定高度
+    static_tolerance: 0.08      # 实时点与静态地图对应的距离容差
+
+    # —— 局部路径 ——
+    local_length: 3.0           # 局部路径截取长度
+
+    # —— 障碍层资源上限 ——
+    max_rays: 20000             # 单帧射线数量上限
+    max_voxels: 120000          # 障碍体素数量上限
+navigation_executor:
+  ros__parameters:
+    # Hz：轨迹跟踪、任务状态更新与运动许可发布；修改后重启。
+    # 周期必须小于现有 0.15 s 许可有效期；实际频率受处理耗时影响。
+    controller_frequency: 20.0
+    walk_speed: 0.20
+    stair_speed: 0.08
+    acceleration: 0.15
+    yaw_rate: 0.30
+    yaw_acceleration: 0.50
+    stair_yaw_rate: 0.15
+    goal_xy_tolerance: 0.15
+    goal_z_tolerance: 0.12
+    max_tracking_error: 0.12

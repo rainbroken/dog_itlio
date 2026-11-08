@@ -1,5 +1,5 @@
 #include "local_navigation_node.hpp"
-#include "navigation_ros.hpp"
+#include "../common/navigation_ros.hpp"
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_types.h>
 

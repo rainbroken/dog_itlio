@@ -1,8 +1,9 @@
 #include "dog_navigation/local_planner.hpp"
-#include "collision_overlay.hpp"
+#include "../local_planner/collision_overlay.hpp"
+#include "../local_planner/local_path.hpp"
 #include "dog_terrain/graph_search.hpp"
 #include "frame_edge_cache.hpp"
-#include "stage_timer.hpp"
+#include "../common/stage_timer.hpp"
 #include "terrain_route_validation.hpp"
 #include <algorithm>
 #include <cmath>
@@ -220,12 +221,7 @@ Route LocalPlanner::plan(const Point &start, const Point &goal,
     impl_->cached_stairs = out.stairs;
   // Include the checked next edge at the horizon; never shortcut or smooth
   // edges.
-  double length = 0;
-  out.local.push_back(out.points.front());
-  for (size_t i = 1; i < out.points.size() && length < o.local_length; ++i) {
-    length += (out.points[i] - out.points[i - 1]).norm();
-    out.local.push_back(out.points[i]);
-  }
+  out.local = localPath(out.points, o.local_length);
   out.valid = true;
   out.reason = "planned";
   return out;

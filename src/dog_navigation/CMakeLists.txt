@@ -15,20 +15,23 @@ find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(pcl_conversions REQUIRED)
-add_library(local_planner SHARED src/obstacle_memory.cpp src/collision_overlay.cpp src/local_planner.cpp
-  src/localization_gate.cpp src/terrain_route_validation.cpp)
+add_library(local_planner SHARED
+  src/local_planner/obstacle_memory.cpp src/local_planner/collision_overlay.cpp
+  src/local_planner/local_path.cpp src/global_planner/terrain_planner.cpp
+  src/decision/localization_gate.cpp src/global_planner/terrain_route_validation.cpp)
 target_include_directories(local_planner PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include> ${PCL_INCLUDE_DIRS})
 target_link_libraries(local_planner PUBLIC dog_terrain::dog_terrain ${PCL_LIBRARIES})
 target_compile_options(local_planner PRIVATE -Wall -Wextra -Wpedantic)
-add_executable(local_navigation src/local_navigation_node.cpp src/navigation_parameters.cpp
-  src/navigation_input.cpp src/navigation_processing.cpp src/navigation_output.cpp)
+add_executable(local_navigation src/ros/local_navigation_node.cpp src/ros/navigation_parameters.cpp
+  src/ros/navigation_input.cpp src/ros/navigation_processing.cpp src/ros/navigation_output.cpp)
 target_link_libraries(local_navigation local_planner)
 ament_target_dependencies(local_navigation rclcpp dog_interfaces nav_msgs sensor_msgs geometry_msgs std_msgs std_srvs tf2_ros pcl_conversions)
 target_compile_options(local_navigation PRIVATE -Wall -Wextra -Wpedantic)
 install(TARGETS local_planner LIBRARY DESTINATION lib)
 install(TARGETS local_navigation DESTINATION lib/${PROJECT_NAME})
-add_library(navigation_execution SHARED src/timed_trajectory.cpp src/path_tracker.cpp src/task_supervisor.cpp src/safety_arbiter.cpp)
+add_library(navigation_execution SHARED src/local_planner/timed_trajectory.cpp
+  src/local_planner/path_tracker.cpp src/decision/task_supervisor.cpp src/decision/safety_arbiter.cpp)
 target_link_libraries(navigation_execution PUBLIC local_planner)
 add_executable(navigation_executor src/execution/executor_node.cpp src/execution/executor_inputs.cpp
   src/execution/executor_tick.cpp src/execution/executor_output.cpp)

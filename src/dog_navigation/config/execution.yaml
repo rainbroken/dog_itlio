@@ -4,17 +4,9 @@ navigation_executor:
   ros__parameters:
     enabled: false
     base_ground_offset: 0.65
-    walk_speed: 0.20
-    stair_speed: 0.08
-    acceleration: 0.15
-    yaw_rate: 0.30
-    yaw_acceleration: 0.50
-    stair_yaw_rate: 0.15
-    goal_xy_tolerance: 0.15
-    goal_z_tolerance: 0.12
-    max_tracking_error: 0.12
 velocity_guard:
   ros__parameters:
+    guard_frequency: 50.0      # Hz：独立安全检查与速度输出，周期须小于 0.15 s
     allow_autonomous: false
     calibration_confirmed: false
     base_ground_offset: 0.65

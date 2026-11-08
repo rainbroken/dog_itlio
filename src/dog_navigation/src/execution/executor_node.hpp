@@ -36,6 +36,7 @@ private:
   void publishState(const TrackResult &result);
   TrackingPose readPose(Pose &map_from_odom);
   bool enabled_ = false, use_yaw_ = false;
+  double controller_frequency_ = 20.;
   double ground_offset_ = .65, route_deadline_ = 0, feedback_at_ = 0,
          robot_at_ = 0, guard_at_ = 0;
   double route_stamp_ = 0, last_tick_ = 0, last_request_ = -100,

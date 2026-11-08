@@ -1,6 +1,9 @@
 # 导航执行与验证边界
 
-核心算法为 C++17，按职责分文件，ROS 接入放在 `src/execution/`。
+核心算法为 C++17；跟踪与时间参数化在 `src/local_planner/`，决策与安全仲裁在
+`src/decision/`，执行节点 ROS 接入在 `src/execution/`，规划节点 ROS 接入在 `src/ros/`。
+完整目录与配置对应关系见 [README.md](README.md)。速度与到点容差在 `local_planner.yaml`，
+任务超时和恢复重试在 `decision.yaml`，硬件许可及机身接地偏移在 `execution.yaml`。
 
 | 模块 | 职责 |
 | --- | --- |

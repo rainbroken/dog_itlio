@@ -1,4 +1,4 @@
-#include "../navigation_ros.hpp"
+#include "../common/navigation_ros.hpp"
 #include "dog_navigation/timed_trajectory.hpp"
 #include "executor_node.hpp"
 

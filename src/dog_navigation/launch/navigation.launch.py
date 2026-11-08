@@ -15,9 +15,12 @@ def generate_launch_description():
         DeclareLaunchArgument("map_id", default_value="full_map"),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("config", default_value=str(share / "config/navigation.yaml")),
+        DeclareLaunchArgument("global_planner_config", default_value=str(share / "config/global_planner.yaml")),
+        DeclareLaunchArgument("local_planner_config", default_value=str(share / "config/local_planner.yaml")),
         DeclareLaunchArgument("goal_topic", default_value="/goal_pose"),
         Node(package="dog_navigation", executable="local_navigation", name="local_navigation", output="screen",
-             parameters=[LaunchConfiguration("config"), {
+             parameters=[LaunchConfiguration("global_planner_config"),
+                         LaunchConfiguration("local_planner_config"), LaunchConfiguration("config"), {
                  key: ParameterValue(LaunchConfiguration(key), value_type=str) for key in ("map_root", "map_id")
              }, {"use_sim_time": ParameterValue(LaunchConfiguration("use_sim_time"), value_type=bool),
                  "goal_topic": LaunchConfiguration("goal_topic")}]),

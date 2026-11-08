@@ -1,4 +1,4 @@
-#include "../navigation_ros.hpp"
+#include "../common/navigation_ros.hpp"
 #include "dog_terrain/collision_geometry.hpp"
 #include "velocity_guard_node.hpp"
 

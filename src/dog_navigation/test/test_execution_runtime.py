@@ -2,11 +2,13 @@
 import json
 import math
 import os
+import signal
 from pathlib import Path
 import struct
 import subprocess
 import time
 import rclpy
+import yaml
 from rclpy.action import ActionClient
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from dog_interfaces.action import NavigateTerrain
@@ -19,6 +21,59 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger, SetBool
 from tf2_msgs.msg import TFMessage
 from ament_index_python.packages import get_package_prefix
+
+
+def test_configured_timer_frequencies(monkeypatch, tmp_path):
+    """Check actual DDS publication rates from launch-loaded nondefault YAML."""
+    monkeypatch.setenv('ROS_DOMAIN_ID', str(110+os.getpid()%80))
+    monkeypatch.setenv('ROS_LOCALHOST_ONLY', '1')
+    prefix=Path(get_package_prefix('dog_navigation'))
+    fixture=Path(__file__).resolve().parents[3]/'build/dog_navigation/test_local_planner'
+    subprocess.run([str(fixture),'--gtest_filter=LocalPlanner.ProjectFixture'],
+                   env=dict(os.environ,DOG_NAV_TEST_MAP_ROOT=str(tmp_path)),check=True)
+    for executable,key in (('navigation_executor','controller_frequency'),
+                           ('velocity_guard','guard_frequency')):
+        for value in ('0.0', '-1.0', '5.0', '.nan', '.inf'):
+            result=subprocess.run([str(prefix/'lib/dog_navigation'/executable),
+                '--ros-args','-p',f'{key}:={value}'],capture_output=True,text=True,timeout=5)
+            assert result.returncode != 0 and key in result.stderr, result.stderr
+    files={
+        'global_planner_config': {'local_navigation': {'planning_rate':8.0}},
+        'local_planner_config': {'navigation_executor': {'controller_frequency':12.5}},
+        'execution_config': {'velocity_guard': {'guard_frequency':80.0}},
+    }
+    args=['ros2','launch','dog_navigation','execution.launch.py',
+          f'map_root:={tmp_path}','map_id:=scene']
+    for argument,nodes in files.items():
+        config=tmp_path/(argument+'.yaml')
+        config.write_text(yaml.safe_dump({name:{'ros__parameters':params}
+                                        for name,params in nodes.items()}))
+        args.append(f'{argument}:={config}')
+    with (tmp_path/'frequency-launch.log').open('w+') as log:
+        process=subprocess.Popen(args,stdout=log,stderr=subprocess.STDOUT)
+        rclpy.init();node=rclpy.create_node('frequency_fixture')
+        samples={name:[] for name in ('local_navigation','navigation_executor','velocity_guard')}
+        for name in samples:
+            node.create_subscription(String,f'/{name}/status',
+                lambda m,key=name:samples[key].append(time.monotonic()),100)
+        try:
+            deadline=time.monotonic()+10
+            while not all(samples.values()) and time.monotonic()<deadline:
+                assert process.poll() is None
+                rclpy.spin_once(node,timeout_sec=.02)
+            assert all(samples.values())
+            start=time.monotonic()
+            while time.monotonic()-start<2.0:
+                assert process.poll() is None
+                rclpy.spin_once(node,timeout_sec=.01)
+            elapsed=time.monotonic()-start
+            for name,expected in (('local_navigation',8.),('navigation_executor',12.5),('velocity_guard',80.)):
+                measured=sum(t>=start for t in samples[name])/elapsed
+                assert expected*.75 < measured < expected*1.25, (name,measured,expected)
+        finally:
+            node.destroy_node();rclpy.shutdown();process.send_signal(signal.SIGINT)
+            try:process.wait(timeout=10)
+            except subprocess.TimeoutExpired:process.kill();process.wait(timeout=5)
 
 
 def test_execution_and_fail_closed_inputs(monkeypatch, tmp_path):
@@ -36,7 +91,14 @@ def test_execution_and_fail_closed_inputs(monkeypatch, tmp_path):
         log=(tmp_path/(executable+'.log')).open('w+');logs.append(log)
         args=[str(prefix/'lib/dog_navigation'/executable),'--ros-args',
               '-p',f'map_root:={tmp_path}','-p','map_id:=scene']
-        for key,value in params.items():args+=['-p',f'{key}:={value}']
+        for name in ('global_planner', 'local_planner', 'decision', 'navigation', 'execution'):
+            args += ['--params-file', str(prefix/f'share/dog_navigation/config/{name}.yaml')]
+        # Named-node YAML wins over CLI wildcard overrides in Humble. Match the
+        # launch Node dictionary's final named-node parameter file instead.
+        overrides=tmp_path/(executable+'-overrides.yaml')
+        overrides.write_text(yaml.safe_dump({executable: {'ros__parameters': {
+            key: yaml.safe_load(value) for key,value in params.items()}}}))
+        args+=['--params-file',str(overrides)]
         processes.append(subprocess.Popen(args,stdout=log,stderr=subprocess.STDOUT))
     rclpy.init();node=rclpy.create_node('execution_fixture')
     tf=node.create_publisher(TFMessage,'/tf',10)

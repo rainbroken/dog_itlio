@@ -1,11 +1,13 @@
 """Node-level synthetic inputs over DDS; no robot or velocity publisher."""
 import json
 import os
+import signal
 from pathlib import Path
 import struct
 import subprocess
 import time
 import rclpy
+from rcl_interfaces.srv import GetParameters
 from ament_index_python.packages import get_package_prefix
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from nav_msgs.msg import Path as PathMsg
@@ -23,9 +25,15 @@ def test_live_replanning_and_invalidations(monkeypatch, tmp_path):
     env=dict(os.environ, DOG_NAV_TEST_MAP_ROOT=str(tmp_path))
     subprocess.run([str(fixture),"--gtest_filter=LocalPlanner.ProjectFixture"],env=env,check=True)
     log=(tmp_path/"node.log").open("w+")
-    process=subprocess.Popen([str(prefix/"lib/dog_navigation/local_navigation"),"--ros-args",
-        "--params-file",str(prefix/"share/dog_navigation/config/navigation.yaml"),
-        "-p",f"map_root:={tmp_path}","-p","map_id:=scene","-p","processing_budget:=2.0"],
+    config=tmp_path/'navigation.yaml'
+    config.write_text('local_navigation:\n  ros__parameters:\n    processing_budget: 2.0\n    avoidance_weight: 3.5\n')
+    global_config=tmp_path/'global.yaml'
+    global_config.write_text('local_navigation:\n  ros__parameters:\n    avoidance_weight: 2.5\n')
+    local_config=tmp_path/'local.yaml'
+    local_config.write_text('local_navigation:\n  ros__parameters:\n    local_length: 1.2\n')
+    process=subprocess.Popen(['ros2','launch','dog_navigation','navigation.launch.py',
+        f'config:={config}',f'global_planner_config:={global_config}',
+        f'local_planner_config:={local_config}',f'map_root:={tmp_path}','map_id:=scene'],
         stdout=log,stderr=subprocess.STDOUT)
     rclpy.init();node=rclpy.create_node("navigation_test")
     statuses=[];paths=[];local=[]
@@ -69,6 +77,11 @@ def test_live_replanning_and_invalidations(monkeypatch, tmp_path):
 
     try:
         assert until(lambda:goal_pub.get_subscription_count()==1 and statuses)
+        parameters=node.create_client(GetParameters, '/local_navigation/get_parameters')
+        assert until(parameters.service_is_ready)
+        values=parameters.call_async(GetParameters.Request(names=['avoidance_weight', 'local_length']))
+        assert until(values.done)
+        assert [v.double_value for v in values.result().values]==[3.5,1.2]
         assert not statuses[-1]["valid"]
         goal=PoseStamped();goal.header.frame_id="map";goal.pose.position.x=1.5;goal.pose.orientation.w=1.
         goal_pub.publish(goal)
@@ -95,7 +108,7 @@ def test_live_replanning_and_invalidations(monkeypatch, tmp_path):
         mode="clear";goal.pose.position.x=-1.5;start=len(statuses);goal_pub.publish(goal)
         assert until(lambda:any(s["state"]=="goal_reached" for s in statuses[start:])),statuses[-1]
     finally:
-        node.destroy_node();rclpy.shutdown();process.terminate()
+        node.destroy_node();rclpy.shutdown();process.send_signal(signal.SIGINT)
         try:process.wait(timeout=5)
         except subprocess.TimeoutExpired:process.kill();process.wait(timeout=5)
         log.close()

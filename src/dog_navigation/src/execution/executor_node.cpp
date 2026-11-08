@@ -14,6 +14,10 @@ void NavigationExecutor::configure() {
   auto param = [this](const char *key, double &value) {
     value = declare_parameter<double>(key, value);
   };
+  param("controller_frequency", controller_frequency_);
+  if (!std::isfinite(controller_frequency_) || controller_frequency_ <= 0 ||
+      1. / controller_frequency_ >= .15)
+    throw std::invalid_argument("controller_frequency must be finite with period < 0.15 s (command lease)");
   param("walk_speed", options_.walk_speed);
   param("stair_speed", options_.stair_speed);
   param("acceleration", options_.acceleration);
@@ -23,6 +27,12 @@ void NavigationExecutor::configure() {
   param("goal_xy_tolerance", options_.goal_xy);
   param("goal_z_tolerance", options_.goal_z);
   param("max_tracking_error", options_.max_tracking_error);
+  DecisionOptions decision;
+  param("recovery_timeout", decision.recovery_timeout);
+  param("progress_timeout", decision.progress_timeout);
+  param("retry_interval", decision.retry_interval);
+  decision.max_retries = declare_parameter<int>("max_retries", decision.max_retries);
+  supervisor_ = TaskSupervisor(decision);
   options_.validate();
   if (!std::isfinite(ground_offset_) || ground_offset_ <= 0)
     throw std::invalid_argument("Invalid calibrated body offset");
@@ -164,7 +174,7 @@ NavigationExecutor::NavigationExecutor() : Node("navigation_executor") {
           supervisor_.cancel();
       });
   last_tick_ = monotonicSeconds();
-  timer_ = create_wall_timer(std::chrono::milliseconds(50), [this] { tick(); });
+  timer_ = create_wall_timer(std::chrono::duration<double>(1. / controller_frequency_), [this] { tick(); });
 }
 } // namespace dog_navigation
 int main(int argc, char **argv) {

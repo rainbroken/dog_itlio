@@ -77,6 +77,27 @@ TEST(Execution, TaskRecoveryIsBoundedAndResumeRequiresNewPlan) {
   EXPECT_FALSE(task.update(26,true,false,true,false));EXPECT_EQ(task.state(),"aborted");
 }
 
+TEST(Execution, DecisionConfigurationControlsRecoveryAndProgress) {
+  DecisionOptions options;
+  options.recovery_timeout = 2.; options.progress_timeout = 5.;
+  options.retry_interval = 1.; options.max_retries = 1;
+  TaskSupervisor task(options); task.start(0);
+  EXPECT_TRUE(task.retryDue(0)); EXPECT_FALSE(task.retryDue(2));
+  EXPECT_FALSE(task.update(0, false, false, true, false));
+  EXPECT_FALSE(task.update(2.1, false, false, true, false));
+  EXPECT_EQ(task.reason(), "input_or_recovery_timeout");
+  task.start(0);
+  EXPECT_FALSE(task.update(5.1, true, true, true, false));
+  EXPECT_EQ(task.reason(), "no_measured_progress");
+  options.max_retries = 0;
+  TaskSupervisor no_retry(options); no_retry.start(0);
+  EXPECT_FALSE(no_retry.retryDue(100));
+  options.recovery_timeout = 0;
+  EXPECT_THROW(TaskSupervisor invalid(options), std::invalid_argument);
+  options.recovery_timeout = 2.; options.max_retries = -1;
+  EXPECT_THROW(TaskSupervisor invalid(options), std::invalid_argument);
+}
+
 // Optional reproducible real-map kinematic audit. Pose feedback follows a simple
 // ideal velocity plant on the supplied ground path; this is not dog dynamics.
 TEST(Execution, RecordedRouteKinematicAudit) {

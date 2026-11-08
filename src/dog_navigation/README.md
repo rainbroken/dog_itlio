@@ -6,6 +6,39 @@
 也可用 `dog_bringup mode:=navigation` 统一启动定位与本包，见根目录 README。
 分文件架构、任务接口、默认开关和验证边界见 [EXECUTION.md](EXECUTION.md)。
 
+## 源码与配置分类
+
+| 目录 | 内容 | 配置 |
+| --- | --- | --- |
+| `src/global_planner/` | 整条地形图路线搜索、复用、动态边代价缓存与可执行性校验 | `config/global_planner.yaml` |
+| `src/local_planner/` | 实时障碍记忆、碰撞覆盖层、已校验路径截取、时间参数化与路径跟踪 | `config/local_planner.yaml` |
+| `src/decision/` | 任务状态机、恢复/重试、定位有效性门控、安全仲裁 | `config/decision.yaml` |
+| `src/ros/` | 规划节点、订阅发布、TF、调度和参数接入 | `config/navigation.yaml` |
+| `src/execution/` | 执行与安全节点的 ROS 接入 | `config/execution.yaml` |
+| `src/common/` | ROS 转换工具与阶段计时 | 无独立配置 |
+
+这里的决策是有限状态机，不是行为树。`LocalPlanner` 为兼容已有调用保留名称，
+其完整路线搜索实现位于 `global_planner/terrain_planner.cpp`；底层图搜索仍复用
+`dog_terrain`。局部部分没有独立的 DWA/MPC 轨迹优化器，路径截取不改变已校验地形边。
+
+两个 launch 均支持 `global_planner_config:=...`、`local_planner_config:=...`；
+执行 launch 额外支持 `decision_config:=...`。
+规划节点依次加载全局、局部、`config`，执行节点依次加载局部、决策、`execution_config`；
+后加载的同名参数优先，launch 显式参数最后覆盖。已有自定义 `config` / `execution_config`
+可继续覆盖原参数，bringup 的 `navigation_config` / `execution_config` 用法保持不变。
+直接运行可执行文件时须自行传入所需 `--params-file`，配置不会自动加载。
+
+静态地形参数和碰撞尺寸取自所加载地图工程的 config；0.66 m 长、0.58 m 宽的机器人
+应使用按该尺寸构建并验证的地图。在规划 YAML 重复填写尺寸无法改变已有地图的碰撞认证。
+修改分类 YAML 后需要重启对应节点。
+
+频率参数均为 Hz：`global_planner.yaml` 的 `planning_rate`（默认 5）驱动共用规划循环，
+包含障碍更新、全局路线校验/必要时重搜索及局部路径截取；`processing_budget` 是该循环的
+拒绝输出预算，不是定时周期。`local_planner.yaml` 的 `controller_frequency`（默认 20）
+驱动跟踪与任务更新；`execution.yaml` 的 `guard_frequency`（默认 50）驱动独立安全检查和
+速度输出。控制和安全循环周期须小于当前 0.15 s 的许可/制动反应时间；调高频率不保证
+实时性，调低频率不延长许可或数据有效期。当前没有独立的局部轨迹优化频率。
+
 ## 启动
 
 ```bash

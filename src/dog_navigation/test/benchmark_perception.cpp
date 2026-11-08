@@ -1,4 +1,4 @@
-#include "../src/collision_overlay.hpp"
+#include "../src/local_planner/collision_overlay.hpp"
 #include "benchmark_support.hpp"
 #include "dog_navigation/obstacle_memory.hpp"
 
