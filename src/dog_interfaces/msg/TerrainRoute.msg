@@ -1,0 +1,14 @@
+std_msgs/Header header
+string map_project
+string map_revision
+uint64 generation
+bool valid
+bool has_goal
+builtin_interfaces/Time goal_stamp
+geometry_msgs/Point goal
+geometry_msgs/Point[] points
+geometry_msgs/Point[] obstacles
+bool[] stairs
+int32[] node_ids
+float64 valid_for_seconds
+string reason

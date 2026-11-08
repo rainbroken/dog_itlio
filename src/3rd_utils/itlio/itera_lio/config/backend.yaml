@@ -1,0 +1,31 @@
+# IteraLIO 后端位姿图配置。
+
+itera_lio_node:
+  ros__parameters:
+    backend:
+      # 后端位姿图总开关：管理关键帧、里程计约束和图优化。
+      enabled: true
+
+      # 关键帧生成条件：位移、旋转达到阈值，或超过最长时间间隔。
+      keyframe:
+        min_translation: 1.0
+        min_rotation_rad: 0.1745329252
+        max_interval_sec: 10.0
+      # 里程计边的标称标准差；实际按段内各扫描的几何信息降权。
+      # 不因扫描数量增多而累加置信度，不宣称是真实相对位姿协方差。
+      odometry:
+        rotation_stddev: 0.05
+        translation_stddev: 0.10
+      # 后端优化任务线程：控制异步优化、排队数量和单任务超时。
+      worker:
+        enabled: true
+        queue_capacity: 2
+        task_timeout_ms: 10000.0
+      # 六自由度位姿图优化器：控制迭代次数、鲁棒核和活动窗口。
+      optimizer:
+        # 始终优化完整六自由度位姿，允许回环修正 roll/pitch/yaw 和 xyz。
+        max_iterations: 30
+        convergence_threshold: 0.00001
+        damping: 0.000001
+        huber_delta: 3.0
+        active_window_size: 5000

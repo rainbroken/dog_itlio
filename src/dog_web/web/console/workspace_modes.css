@@ -1,0 +1,59 @@
+/* Each workspace follows its task rather than repeating an inspector stack. */
+#mainWorkspace[data-page="overview"] .workspace,
+#mainWorkspace[data-page="terrain"] .workspace { display: flex; flex-direction: column; gap: 12px; }
+#mainWorkspace[data-page="overview"] .scene-panel,
+#mainWorkspace[data-page="terrain"] .scene-panel { flex: 1 1 0; min-height: 150px; }
+#mainWorkspace[data-page="overview"] .inspector { flex: 0 0 auto; max-height: 32%; }
+.overview-strip { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); border-top: 1px solid var(--line); }
+.overview-strip > div { padding: 12px 16px; min-width: 0; border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.overview-strip > div:last-child { border-right: 0; }
+.overview-strip small, .overview-strip span { font-size: 10px; color: var(--muted); }
+.overview-strip strong { font-size: 14px; overflow-wrap: anywhere; }
+.overview-strip .button { margin-top: 5px; padding: 4px 8px; font-size: 10px; }
+#mainWorkspace[data-page="mapping"] .workspace { grid-template-columns: 300px minmax(0,1fr); }
+#mainWorkspace[data-page="mapping"] .scene-panel { grid-column: 2; grid-row: 1; }
+#mainWorkspace[data-page="mapping"] .inspector { grid-column: 1; grid-row: 1; }
+#mainWorkspace[data-page="mapping"] #modeCard { border: 0; border-radius: 0; border-left: 2px solid var(--amber); }
+#mainWorkspace[data-page="mapping"] .mapping-stage { position: relative; padding-left: 10px; }
+#mainWorkspace[data-page="navigation"] .localization-card { order: -1; border-top: 3px solid var(--accent); }
+#mainWorkspace[data-page="navigation"] .task-card { border-top: 3px solid var(--amber); }
+#mainWorkspace[data-page="terrain"] .inspector { flex: 0 0 auto; max-height: 42%; }
+#mainWorkspace[data-page="terrain"] #modeCard { border-radius: 0; padding: 0; border-inline: 0; border-bottom: 0; }
+.terrain-review { display: grid; grid-template-columns: 1.2fr 1fr 1fr; }
+.terrain-review > section { min-width: 0; padding: 14px 18px; border-right: 1px solid var(--line); }
+.terrain-review > section:last-child { border-right: 0; }
+.terrain-review h2 { margin: 4px 0 8px; }
+.terrain-review .settings-note { margin: 8px 0; }
+.terrain-facts { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 10px 0; }
+.terrain-facts small, .terrain-facts strong { display: block; }
+.terrain-facts small { font-size: 9px; color: var(--muted); }
+.terrain-facts strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+.terrain-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 10px; margin-top: 10px; }
+.terrain-filter select { min-width: 0; max-width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); padding: 4px; }
+.terrain-filter input { min-width: 60px; flex: 1; accent-color: var(--accent); }
+.terrain-constraint { display: flex; justify-content: space-between; gap: 12px; font-size: 10px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.terrain-constraint span { color: var(--muted); }
+.terrain-review details { margin-top: 10px; font-size: 11px; }
+.terrain-review summary { cursor: pointer; }
+.terrain-review pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; }
+.terrain-review textarea { display: block; width: 100%; margin-block: 10px; background: var(--bg); color: var(--text); border: 1px solid var(--line); }
+@media (max-width: 1100px) {
+  .terrain-review { grid-template-columns: 1fr 1fr; }
+  .terrain-review > section:last-child { grid-column: 1 / -1; border-top: 1px solid var(--line); }
+  #mainWorkspace[data-page="mapping"] .workspace { grid-template-columns: 250px minmax(0,1fr); }
+  .overview-strip > div { padding: 9px; }
+  .overview-strip strong { font-size: 12px; }
+}
+@media (max-width: 700px) {
+  #mainWorkspace[data-page="mapping"] .workspace { display: flex; flex-direction: column; }
+  #mainWorkspace[data-page="mapping"] .scene-panel { flex: 1 1 0; min-height: 140px; }
+  #mainWorkspace[data-page="mapping"] .inspector { max-height: 42%; }
+  #mainWorkspace[data-page="overview"] .inspector { max-height: 35%; }
+  .overview-strip { grid-template-columns: 1fr 1fr; }
+  .overview-strip > div { padding: 7px; }
+  .overview-strip span { display: none; }
+  .overview-strip .button { margin: 0; font-size: 9px; }
+  .terrain-review { grid-template-columns: 1fr; }
+  .terrain-review > section { border-right: 0; border-bottom: 1px solid var(--line); padding: 10px; }
+  #mainWorkspace[data-page="navigation"] .inspector { max-height: 50%; }
+}

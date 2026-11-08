@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>interfaces</name>
+  <version>0.1.0</version>
+  <description>Bridge Livox CustomMsg point clouds to sensor_msgs/PointCloud2 without dropping Livox point fields.</description>
+  <maintainer email="rain@todo.todo">rain</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>livox_ros_driver2</depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

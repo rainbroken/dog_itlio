@@ -1,0 +1,98 @@
+# IteraLIO MID360 基础配置：接口、标定和传感器时序。
+# 功能配置段由 itera_lio.launch.py 从 frontend.yaml、backend.yaml、loop.yaml
+# 和 output.yaml 中加载。
+
+itera_lio_node:
+  ros__parameters:
+    topics:
+      # LiDAR、IMU、里程计、地图和点云输出话题。
+      lidar: /interfaces/lidar
+      imu: /interfaces/imu
+      odometry: /lio/odom
+      path: /lio/path
+      optimized_path: /lio/optimized_path
+      optimized_map: /lio/optimized_map
+      cloud_registered: /lio/cloud_registered
+      cloud_deskewed: /lio/cloud_deskewed
+      local_map: /lio/local_map
+      global_map: /lio/global_map
+      map_updates: /lio/map_updates
+      effective_points: /lio/effective_points
+      cloud_colored: /lio/cloud_colored
+
+    # LIVO 启用相机链路；仅使用 LiDAR 时设为 "lio"。
+    mode:
+      type: lio
+
+    frames:
+      # 世界、IMU 和 LiDAR 的 TF 坐标系名称。
+      world: map
+      odom: odom
+      imu: imu
+      lidar: lidar
+
+    extrin_calib:
+      # LiDAR 到 IMU 的安装外参。
+      # p_I = R_IL * p_L + p_IL（平移单位为米）。
+      extrinsic_T: [-0.011, -0.02329, 0.04412]
+      extrinsic_R: [1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0]
+
+    time_offset:
+      # LiDAR 与 IMU 的时间偏移校正。
+      lidar_to_imu: 0.0
+
+    sensor:
+      # 传感器 QoS、内部队列和同步缓存容量。
+      # 保证 bag 回放经过桥接时尽量无损且可复现。
+      # 只有传感器发布者无法提供 reliable QoS 时才切换为 best_effort。
+      qos:
+        reliability: reliable
+        lidar_depth: 32
+        imu_depth: 2000
+      # 覆盖同步地图重建和输出抖动，避免短时阻塞直接丢失 LiDAR 帧。
+      lidar_queue_capacity: 128
+      imu_queue_capacity: 2000
+      imu_history_max_samples: 3000
+      imu_history_duration_sec: 0.5
+      max_pending_lidar: 8
+
+    sync:
+      # 扫描结束后不再额外等待；处理器仍要求IMU覆盖扫描结束时刻。
+      # 如需固定额外缓冲可显式增加；扫描末IMU覆盖检查始终保留。
+      imu_lookahead_sec: 0.0
+
+    imu:
+      # IMU 初始化、噪声模型、重力和最大采样间隔。
+      init_duration: 2.0
+      init_min_samples: 100
+      gyro_std_threshold: 0.1
+      accel_std_threshold: 0.3
+      gyro_mean_threshold: 0.15
+      # 0 关闭相对于预设重力模长的门控，仍检查角速度和加速度方差。
+      accel_norm_threshold: 0.0
+      # 仅供显式启用模长参考的配置使用；当前自由模长路径不使用该值。
+      gravity_magnitude: 9.81
+      # false：加速度偏置初值为零，由静止加速度均值估计重力模长。
+      # 当前与 accel_norm_threshold=0、stddev=0 配套使用，不固定重力模长。
+      initialize_accel_bias_from_static_mean: false
+      # 静止动力学的协方差保留姿态/加速度偏置与自由重力的相关性。
+      # 下列数值是初始化不确定度模型，不代表传感器标定精度。
+      initialize_covariance_from_static_window: true
+      initial_rotation_stddev: 0.001
+      initial_position_stddev: 0.001
+      initial_velocity_stddev: 0.01
+      initial_accel_bias_stddev: 0.1
+      update_gravity_after_initialization: true
+      # 物理重力模长的软先验，0 关闭；不要求地面水平，不限制上下楼高度。
+      gravity_magnitude_stddev: 0.0
+      max_interval: 0.05
+      gyro_noise_density: 0.01
+      accel_noise_density: 0.1
+      gyro_bias_noise_density: 0.001
+      accel_bias_noise_density: 0.01
+
+    lidar:
+      # LiDAR 距离过滤和输入点云相关设置。
+      min_range: 0.8

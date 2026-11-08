@@ -1,0 +1,60 @@
+itera_lio_node:
+  ros__parameters:
+    camera:
+      # 相机输入、时间同步、内参和 LiDAR-相机外参配置。
+      image_topic: /camera1/image_raw
+      # Original input dimensions and original-resolution intrinsics.
+      width: 1280
+      height: 720
+      # Resize matched coloring frames only; projection handles pixel centers.
+      image_scale: 1.0
+      qos:
+        # 图像订阅的可靠性和队列深度。
+        reliability: reliable
+        depth: 32
+      # 数据包中偶尔会出现超过 50 ms 的传感器时间戳偏差。
+      # 保持关联范围有界，但不要不必要地丢弃这些帧。
+      sync_tolerance_sec: 0.05
+      # 传感器时间水位的乱序余量；不以墙钟等待限制合法图像的传输延迟。
+      sync_wait_sec: 0.20
+      image_queue_capacity: 8
+      # # # d435针孔相机内参和畸变参数。
+      # intrinsics:
+      #   # 适用于 1280x720 图像的标定针孔模型和畸变参数。
+      #   fx: 907.292
+      #   fy: 903.016
+      #   cx: 632.5
+      #   cy: 365.557
+      #   k1: 0.074039
+      #   k2: -0.114819
+      #   p1: 0.002575
+      #   p2: -0.004635
+
+      # # LiDAR 坐标系到相机坐标系的刚体外参。
+      # extrinsic:
+      #   lidar_to_camera_rotation:
+      #     [-0.007823, -0.999947, -0.006722,
+      #       0.353953, 0.003518, -0.935256,
+      #       0.935230, -0.009696, 0.353907]
+      #   lidar_to_camera_translation:
+      #     [0.128979, 0.068637, -0.016452]
+
+      intrinsics:
+        # B021 / 1080 实际使用的 1280x720 相机标定。
+        fx: 907.292
+        fy: 903.016
+        cx: 632.5
+        cy: 365.557
+        k1: 0.074039
+        k2: -0.114819
+        p1: 0.002575
+        p2: -0.004635
+    # usb_cam_handler
+      extrinsic:
+        lidar_to_camera_rotation:
+          [-0.007823, -0.999947, -0.006722,
+            0.353953, 0.003518, -0.935256,
+            0.935230, -0.009696, 0.353907]
+        lidar_to_camera_translation:
+          [0.128979, 0.068637, -0.016452]
+

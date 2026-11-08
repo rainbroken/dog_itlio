@@ -1,0 +1,79 @@
+# IteraLIO 回环配置。
+# 当前回归配置启用几何验证；约束仍需通过一致性确认后才进入后端。
+
+itera_lio_node:
+  ros__parameters:
+    loop_closure:
+      # 回环检测、几何验证、确认、异步任务和关键帧存储配置。
+      enabled: true
+      detector:
+        # 根据关键帧描述子和重力/高度差筛选回环候选。
+        min_keyframe_separation: 30
+        max_candidates: 5
+        max_alignment_candidates: 40
+        min_time_separation_sec: 30.0
+        max_descriptor_distance: 0.60
+        min_descriptor_overlap_ratio: 0.05
+        # 先排除跨楼层和重力方向不一致的结构别名，再分配 top-k 名额。
+        max_odometry_vertical_separation: 1.5
+        max_gravity_angle_rad: 0.20
+      verifier:
+        registration_engine: manual_gicp
+        # 使用 GICP 进行几何验证并检查重叠、退化和位姿修正。
+        min_points: 100
+        min_inliers: 100
+        # 1080 实测的末端真候选为 0.0229--0.0255 m^2；中段重复走廊
+        # 别名为 0.0409--0.0453 m^2。
+        max_fitness: 0.03
+        # 1080 走廊数据的可重复前端终点与起点相差约 56 m。大修正仍需通过
+        # 双向重叠、几何秩、重力/高度门和不同当前关键帧的一致性确认。
+        max_translation_jump: 80.0
+        max_rotation_rad: 1.0
+        # 搜索半径和评估内点半径用途不同，不能混用。
+        max_correspondence_distance: 1.5
+        inlier_distance: 0.45
+        gicp_voxel_size: 0.30
+        robust_kernel_scale: 1.0
+        num_threads: 2
+        min_inlier_ratio: 0.10
+        min_reciprocal_inlier_ratio: 0.40
+        # 等价于归一化几何 Hessian 条件数不超过约 100。
+        min_geometry_eigenvalue_ratio: 0.01
+        max_normal_eigenvalue_ratio: 0.2
+        # 门控闭环后两关键帧的重力残差与沿重力轴的实际高度差；不是检查
+        # 依赖世界原点的全局修正变换 roll/pitch 和 translation.z。
+        max_gravity_tilt_correction_rad: 0.10
+        max_vertical_correction: 1.0
+        normal_neighbors: 10
+        max_iterations: 40
+        max_source_points: 2000
+        max_target_points: 10000
+      submap_half_window: 10
+      min_attempt_interval_sec: 5.0
+      confirmation:
+        # 对候选回环进行跨关键帧重复确认。
+        count: 2
+        translation_tolerance: 2.0
+        rotation_tolerance_rad: 0.10
+        # 数据结束前可能只剩一个关键帧。仅当 scan-to-submap 的描述子、
+        # 双向覆盖、几何秩、重力和高度全部有大裕量时允许单帧提交；
+        # 其余通过 verifier 的候选仍需不同 current_id 的两帧确认。
+        strong_single_frame:
+          enabled: true
+          min_inliers: 150
+          max_descriptor_distance: 0.20
+          max_fitness: 0.03
+          min_reciprocal_inlier_ratio: 0.90
+          max_geometry_condition_number: 30.0
+          max_gravity_residual_rad: 0.05
+          max_vertical_separation: 0.20
+      keyframe_voxel_size: 0.20
+      max_keyframe_points: 4000
+      worker:
+        # 回环验证任务的队列和超时配置。
+        queue_capacity: 8
+        task_timeout_ms: 10000.0
+      storage:
+        # 关键帧点云内存驻留和磁盘归档配置。
+        max_resident_keyframe_clouds: 200
+        archive_directory: data/loop_keyframes

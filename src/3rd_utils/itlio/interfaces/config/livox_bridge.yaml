@@ -1,0 +1,21 @@
+livox_to_pointcloud2:
+  ros__parameters:
+    input_topic: /livox/lidar
+    output_topic: /interfaces/lidar
+
+    imu_input_topic: /livox/imu
+    imu_output_topic: /interfaces/imu
+
+    # Livox RawImuPoint acceleration is expressed in g; the LIO core uses m/s^2.
+    imu_acceleration_scale: 9.80665
+    # Leave empty to retain the frame_id from Livox CustomMsg.
+    frame_id: ""
+    # Optional name for the native IMU axes; this does not rotate measurements.
+    imu_frame_id: ""
+
+    # Reliable replay prevents middleware loss from changing the estimator path.
+    # Use best_effort only when the live sensor publisher does not offer reliable QoS.
+    qos:
+      reliability: reliable
+      lidar_depth: 32
+      imu_depth: 2000

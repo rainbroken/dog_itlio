@@ -1,0 +1,32 @@
+# 启动级配置（非 ROS 节点参数）。命令行 key:=value 优先于此文件。
+bringup:
+  # —— 启动模式与硬件开关 ——
+  mode: mapping                 # mapping：网页手动启动建图；navigation：已有地图定位与规划
+  execute: false                # 开启执行节点；硬件输出还需 execution.yaml 的标定确认
+  execution_config: ""
+  lidar: true                   # 启动 MID360s，已有外部驱动或回放时关闭
+  driver: true                  # 启动机器狗驱动；需要机器人网络连通才会控制就绪
+  bridge: true                  # bringup 阶段统一转换雷达与 IMU，建图/定位复用，不重复启动
+
+  # —— 机器狗网络 ——
+  robot_ip: "10.21.20.1"
+  robot_state_port: 9873
+
+  # —— 网页与时间 ——
+  host: "0.0.0.0"               # 允许局域网访问
+  port: 8080
+  use_sim_time: false            # rosbag --clock 回放时开启
+
+  # —— 地图与建图输出 ——
+  map_root: "/home/yuling/dog_itlio/data/maps"  # 导入后的地图项目目录
+  slam_output: "/home/yuling/dog_itlio/data/slam"  # 原始建图会话与 PCD 输出目录
+  motion_config: "/home/yuling/dog_itlio/data/config/motion.json"  # 网页速度设置，保存后重启自动恢复
+
+  # —— 已有地图定位与规划 ——
+  map_id: saved_20261107_170227   # 基于指定 71935 点 cloud.pcd 生成的地图项目
+  start_lio: true                # 仅 navigation 模式使用；mapping 由网页启动 LIO
+  # —— 模块配置入口 ——
+  # 留空使用各包默认配置；相对路径以本 YAML 所在目录为基准。
+  livox_config: ""               # 默认 livox_ros_driver2/config/MID360s_config.json
+  localization_config: ""        # 默认 dog_slam/config/localization.yaml
+  navigation_config: ""          # 默认 dog_navigation/config/navigation.yaml

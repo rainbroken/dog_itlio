@@ -1,0 +1,35 @@
+itera_lio_node:
+  ros__parameters:
+    evaluation:
+      # 评估数据、运行统计、事件和轨迹日志的输出配置。
+      # 每帧记录写入 output_dir/<timestamp>/evaluation/ 目录。
+      enabled: true
+      # 默认 frames/runtime 为 30/32 列；odom 始终为 38 列，含状态和协方差对角项。
+      # 排查细分耗时、特征值等问题时设为 true，见 docs/evaluation.md。
+      detailed: false
+      # 精简模式只记录达到该耗时的地图重建事件，单位 ms。
+      slow_rebuild_ms: 100.0
+      output_dir: data
+
+      # 每种产物都可以独立禁用。上方的总开关会禁用所有产物，
+      # 但不会改变这里的选择。
+      outputs:
+        # 各类评估文件的独立开关。
+        frames: true
+        runtime: true
+        events: true
+        loop_verifications: true
+        summary: true
+        odometry: true
+        parameters: true
+        manifest: true
+
+      # STATUS/TIMING/MAP 快照以及累计失败计数器。
+      runtime_frequency_hz: 0.2
+
+      comparison:
+        # 汇总统计的预热阶段和分位数设置。
+        # 汇总运行指标时忽略开始阶段的这段时间。
+        warmup_sec: 2.0
+        # 用于延迟和残差尾部统计的分位数。
+        percentile: 0.95

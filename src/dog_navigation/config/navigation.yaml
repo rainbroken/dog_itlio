@@ -1,0 +1,25 @@
+# ROS 接口、数据有效性和调度。修改后重启生效。
+# 规划 launch 先加载 global_planner/local_planner，随后本文件作为覆盖层。
+# 保留 config/navigation_config 自定义整套参数的兼容能力；长度 m、时间 s。
+local_navigation:
+  ros__parameters:
+    # —— 坐标系与话题 ——
+    map_frame: map
+    odom_frame: odom
+    base_frame: base_link
+    sensor_frame: livox_frame
+    cloud_topic: /lio/cloud_deskewed
+    localization_topic: /map_localizer/status
+    goal_topic: /goal_pose
+    # —— 数据有效性门控 ——
+    data_timeout: 0.6            # 扫描有效期
+    localization_timeout: 0.8    # 定位状态有效期
+    tf_timeout: 0.4              # TF 有效期
+
+    # —— 机身与地面关系 ——
+    # base_link 到名义接地位置的机身坐标系偏移量大小，按实际站姿校准。
+    base_ground_offset: 0.65
+
+    # —— 里程计连续性 ——
+    odom_jump_tolerance: 0.3     # 位移跳变判断的额外容差
+    max_odom_speed: 3.0          # 连续性检查允许的最大速度，m/s

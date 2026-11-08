@@ -1,0 +1,246 @@
+/* Fixed-height console: status at the top, scene in the remaining viewport. */
+#manualControl .action-row, #modeCard .action-row { flex-wrap: wrap; }
+#manualControl [data-drive] { touch-action: none; user-select: none; }
+#mappingState { white-space: pre-wrap; overflow-wrap: anywhere; }
+#dialogBody { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 55vh; overflow: auto; }
+:root {
+  --bg: #0b1412;
+  --panel: #111f1a;
+  --panel2: #172923;
+  --line: #273d33;
+  --text: #e1eee7;
+  --muted: #819e8f;
+  --green: #54dfc3;
+  --accent: #54dfc3;
+  --cyan: #54bca5;
+}
+
+/* 起终点始终显示在任务卡片内，小屏布局也保留坐标。 */
+.task-card .coordinates.endpoint-coordinates { display: grid; gap: 7px; text-align: left; }
+.endpoint-coordinates > div { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 6px; align-items: baseline; }
+.endpoint-coordinates output { min-width: 0; font: 10px/1.7 monospace; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.endpoint-coordinates small { margin: 0; }
+.endpoint-coordinates .coordinate-frame { text-align: right; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body { background: var(--bg); }
+.app { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.sidebar { background: #101e18; padding-top: 22px; }
+.robot-card { margin: 22px 0; }
+.robot-avatar, .target-icon { background: #193b2e; color: #77dcc0; }
+nav button.active { background: #1b3b2f; color: #8fe4ca; }
+nav button:hover { background: #193326; }
+.sidebar-note { padding-top: 18px; }
+.sidebar-bottom { padding-block: 12px; }
+.tiny-progress i { background: #54bda2; }
+.topbar {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 15px;
+  padding: 10px 18px 12px;
+  background: #101f19;
+}
+.topbar-left, .topbar-right { min-width: 0; gap: 13px; }
+.topbar-right .button { padding: 4px 9px; font-size: 10px; }
+.health-strip {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0;
+  padding: 10px 0;
+  background: #12271e;
+  border-color: #294736;
+  border-radius: 5px;
+}
+.health-strip button { padding: 0 13px; }
+.health-strip button > span { font-size: 11px; }
+.health-strip b { font-size: 12px; color: #cce5d8; }
+.health-strip small { margin-top: 2px; }
+.health-strip .dot { margin-top: 5px; }
+.dot.green { background: #54dfc3; }
+.button { background: #172c22; border-color: #345344; }
+.button.primary { background: #54dfc3; border-color: #54dfc3; color: #092d27; }
+.segmented { background: #0b1711; }
+.segmented button.active { background: #234d3b; color: #9aead1; }
+.pill { background: #1a3b2a; border-color: #325d42; color: #a1d5b5; }
+.coordinates { background: #0b1b13; }
+.notice { background: #2c2b1c; }
+.card, .scene-panel { background: #112219; }
+.panel-heading { background: #14271d; flex: 0 0 auto; }
+.scene-metrics { background: #102017; }
+.scene-footer { background: #112219; flex: 0 0 auto; }
+.scene-badge, .floor-switch, .scene-tools { background: #10261ce8; }
+.floor-switch button.active { background: #244e36; color: #abdfbc; }
+.map-label { background: #193d2ae6; border-color: #518864; }
+.bottom-bar {
+  position: static;
+  flex: 0 0 auto;
+  min-height: 52px;
+  padding: 8px 18px;
+  background: #11251a;
+}
+main {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 12px 16px;
+  overflow: hidden;
+}
+.workspace { height: 100%; min-height: 0; align-items: stretch; }
+.scene-panel { display: flex; flex-direction: column; min-height: 0; }
+.scene { flex: 1 1 0; min-height: 0; height: auto; }
+.scene-metrics { flex: 0 0 auto; padding: 11px 0; }
+.scene-metrics strong { font-size: 19px; }
+.scene-metrics span { margin-bottom: 3px; }
+.inspector { min-height: 0; overflow: auto; scrollbar-width: thin; }
+.inspector .card { flex: 0 0 auto; }
+.velocity-card { margin-top: auto; }
+/* Telemetry occupies the header gap; wrap whole groups before they collide. */
+.topbar { grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; }
+.topbar-left { flex-wrap: wrap; gap: 6px 12px; }
+.topbar-right { flex-wrap: wrap; justify-content: flex-end; }
+.motion-telemetry { display: flex; align-items: center; gap: 15px; padding-inline: 15px; border-inline: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.motion-telemetry .velocity-values { gap: 14px; }
+.motion-telemetry .velocity-values small { font-size: 8px; color: var(--muted); }
+.motion-telemetry .velocity-values strong { font-size: 11px; margin: 0; white-space: nowrap; }
+.motion-telemetry .attitude { gap: 12px; margin: 0; font-size: 9px; }
+.motion-telemetry .attitude span { display: flex; flex-direction: column; }
+.motion-telemetry .attitude b { margin: 0; white-space: nowrap; }
+#mainWorkspace { display: flex; flex-direction: column; gap: 12px; }
+#sceneWorkspace, #contentPage { flex: 1 1 0; min-height: 0; height: auto; }
+.workspace-purpose { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.workspace-purpose h1 { font-size: 21px; margin: 1px 0 3px; }
+.workspace-purpose p { font-size: 11px; color: var(--muted); }
+.workspace-purpose .eyebrow { font-size: 8px; }
+.mapping-stage { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 15px; }
+.mapping-stage > small { color: var(--muted); letter-spacing: 1px; }
+.mapping-stage p { font-size: 11px; margin: 8px 0 12px; }
+#mainWorkspace[data-page="mapping"] .scene-panel { border-top: 3px solid var(--amber); }
+#mainWorkspace[data-page="mapping"] .scene-caption .mini-label { color: var(--amber); }
+/* Keep endpoint coordinates available at narrow widths as well. */
+@media (max-width: 1400px) {
+  .topbar { grid-template-columns: minmax(0, 1fr) auto; }
+  .motion-telemetry { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; border: 0; padding: 0; }
+  .motion-telemetry .attitude span { flex-direction: row; gap: 6px; }
+  .motion-telemetry .velocity-values > div { display: flex; align-items: baseline; gap: 6px; }
+}
+@media (max-width: 700px) {
+  .topbar .motion-telemetry { grid-column: 1; grid-row: auto; gap: 8px; flex-wrap: wrap; }
+  .motion-telemetry .attitude { gap: 8px; }
+  .workspace-purpose { gap: 8px; align-items: flex-start; }
+  .workspace-purpose h1 { font-size: 16px; }
+  .workspace-purpose p { font-size: 9px; }
+  .workspace-purpose .button { padding: 5px; font-size: 9px; }
+  #mainWorkspace .task-card .coordinates.endpoint-coordinates { display: grid; }
+  #mainWorkspace .inspector { max-height: 40%; }
+  #mainWorkspace[data-page="mapping"] .inspector { max-height: 45%; }
+}
+.card { padding: 14px; }
+.content-page { height: 100%; min-height: 0; overflow: auto; scrollbar-width: thin; }
+.content-header { margin: 0 0 12px; }
+.content-header h2 { font-size: 15px; }
+.content-header p { margin-top: 4px; }
+.events {
+  position: fixed;
+  z-index: 12;
+  top: 49px;
+  right: 18px;
+  width: min(640px, calc(100vw - 232px));
+  max-height: min(420px, calc(100dvh - 130px));
+  margin: 0;
+  background: #12271e;
+  border-color: #41634e;
+  box-shadow: 0 16px 50px #0008;
+  display: flex;
+  flex-direction: column;
+}
+.events-heading { flex: 0 0 auto; }
+#eventList { overflow: auto; min-height: 0; }
+.settings-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+.settings-grid .card { padding: 17px; }
+.setting-row { padding: 11px 0; }
+.settings-note { line-height: 1.8; margin-bottom: 0; }
+.control-layout { margin-top: 17px; padding-top: 12px; border-top: 1px solid var(--line); }
+.control-layout > strong { font-size: 11px; }
+.control-layout .keyboard { margin: 14px 0 10px; }
+#toast { bottom: 68px; }
+@media (max-height: 760px) and (min-width: 701px) {
+  .sidebar { padding-top: 16px; }
+  .robot-card { margin: 16px 0; padding-block: 9px; }
+  nav { gap: 4px; }
+  nav button { padding-block: 10px; }
+  .nav-divider { margin-block: 9px; }
+  .sidebar-note { gap: 5px; padding-bottom: 12px; }
+  .topbar { gap: 8px 12px; padding-block: 8px; }
+  .health-strip { padding-block: 8px; }
+  .card { padding: 11px; }
+  .card-heading { margin-bottom: 11px; }
+  .route-stats { margin-block: 11px; }
+  .coordinates { margin-block: 9px 12px; }
+  .scene-metrics { padding-block: 8px; }
+  .inspector { gap: 9px; }
+}
+@media (max-width: 1200px) {
+  .settings-grid { grid-template-columns: 1fr 1fr; }
+  .health-strip button { padding-inline: 10px; }
+  .topbar { padding-inline: 15px; }
+}
+@media (max-width: 940px) {
+  .sidebar { padding-top: 22px; }
+  .topbar-left > .top-separator { display: none; }
+  .health-strip b { display: none; }
+  .scene { height: auto; }
+  .panel-heading { flex-direction: row; align-items: center; }
+  .events { width: min(640px, calc(100vw - 100px)); }
+}
+@media (max-width: 700px) {
+  .topbar { grid-template-columns: 1fr; gap: 7px; padding: 8px 10px; }
+  .topbar-left { display: none; }
+  .topbar-right { margin: 0; width: 100%; justify-content: space-between; gap: 5px; }
+  .topbar-right .button { padding: 3px 5px; font-size: 9px; }
+  .topbar .counter { margin-left: 3px; }
+  .health-strip { grid-template-columns: repeat(4, 1fr); gap: 9px 0; padding-block: 8px; }
+  .health-strip button { padding-inline: 6px; }
+  .health-strip button > span { font-size: 9px; }
+  .health-strip small { font-size: 8px; }
+  main { padding: 8px; }
+  .workspace { display: flex; flex-direction: column; gap: 8px; }
+  .scene-panel { flex: 1 1 0; min-height: 0; }
+  .scene { height: auto; }
+  .panel-heading { min-height: 40px; padding: 8px; }
+  .panel-heading strong { font-size: 10px; }
+  .segmented button { padding: 3px 5px; font-size: 8px; }
+  .scene-caption { top: 54px; left: 12px; gap: 3px; }
+  .scene-caption .mini-label { display: none; }
+  .scene-caption strong { font-size: 10px; }
+  .scene-caption small { font-size: 8px; }
+  .scene-tools { top: 52px; right: 9px; }
+  .scene-tools button { width: 26px; height: 27px; font-size: 16px; }
+  .scene-top { inset: 9px 10px auto; }
+  .scene-metrics { padding: 7px 0; }
+  .scene-metrics strong { font-size: 13px; }
+  .scene-metrics span { font-size: 8px; }
+  .scene-footer { padding: 5px 8px; font-size: 7px; }
+  .scene-legend { font-size: 7px; gap: 7px; left: 10px; bottom: 9px; }
+  .floor-switch { bottom: 32px; left: 10px; font-size: 8px; padding: 2px; }
+  .floor-switch button { padding: 2px 6px; }
+  .axis { bottom: 9px; right: 10px; transform: scale(.8); transform-origin: bottom right; }
+  .inspector { display: flex; flex: 0 0 auto; max-height: 24%; overflow: auto; }
+  .inspector .card { padding: 9px; }
+  .task-card .card-heading { margin-bottom: 8px; }
+  .task-card .coordinates, .task-card .route-track, .task-card .route-stats,
+  .task-card .notice, .task-card .task-secondary, .velocity-card { display: none; }
+  .task-destination { margin-bottom: 9px; }
+  .task-destination strong { font-size: 11px; }
+  .target-icon { width: 27px; height: 27px; font-size: 20px; }
+  .action-row .button { padding: 6px; font-size: 10px; }
+  .bottom-bar { min-height: 46px; padding: 7px 10px; }
+  .bottom-bar #stop { padding: 7px 10px; }
+  .settings-grid { grid-template-columns: 1fr; }
+  .content-header { align-items: flex-start; gap: 8px; }
+  .content-header h2 { font-size: 13px; }
+  .content-header p { font-size: 9px; }
+  .events { top: 45px; right: 10px; width: calc(100vw - 90px); }
+  #toast { font-size: 10px; padding: 10px; bottom: 58px; }
+}

@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>dog_bringup</name>
+  <version>0.1.0</version>
+  <description>Unified sensor, robot driver and web terrain-planning bringup; mapping starts from the web.</description>
+  <maintainer email="yuling@example.com">yuling</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>dog_driver</exec_depend>
+  <exec_depend>dog_web</exec_depend>
+  <exec_depend>dog_slam</exec_depend>
+  <exec_depend>dog_navigation</exec_depend>
+  <exec_depend>livox_ros_driver2</exec_depend>
+  <exec_depend>interfaces</exec_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>ament_index_python</test_depend>
+  <test_depend>rclpy</test_depend>
+  <test_depend>rcl_interfaces</test_depend>
+  <test_depend>geometry_msgs</test_depend>
+  <test_depend>nav_msgs</test_depend>
+  <test_depend>sensor_msgs</test_depend>
+  <test_depend>std_msgs</test_depend>
+  <test_depend>tf2_msgs</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

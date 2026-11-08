@@ -1,0 +1,422 @@
+{
+  "calf.obj": {
+    "source_bytes": 430551,
+    "result_bytes": 109868,
+    "triangles_before": 5656,
+    "triangles_after": 1696,
+    "materials": {
+      "合金2": {
+        "before": {
+          "triangles": 5656,
+          "vertices": 2817,
+          "components": 3,
+          "boundary_edges": 0,
+          "non_manifold_edges": 0,
+          "surface_area": 0.0478757501515786,
+          "extent": [
+            0.048011,
+            0.041054,
+            0.287942
+          ]
+        },
+        "after": {
+          "triangles": 1696,
+          "vertices": 837,
+          "components": 3,
+          "boundary_edges": 0,
+          "non_manifold_edges": 0,
+          "surface_area": 0.04773678973838535,
+          "extent": [
+            0.047908,
+            0.041054,
+            0.28779
+          ]
+        }
+      }
+    }
+  },
+  "hip.obj": {
+    "source_bytes": 1043681,
+    "result_bytes": 275303,
+    "triangles_before": 14402,
+    "triangles_after": 4266,
+    "materials": {
+      "合金2": {
+        "before": {
+          "triangles": 14402,
+          "vertices": 6659,
+          "components": 5,
+          "boundary_edges": 21,
+          "non_manifold_edges": 725,
+          "surface_area": 0.09740452842267881,
+          "extent": [
+            0.107017,
+            0.089502,
+            0.08476
+          ]
+        },
+        "after": {
+          "triangles": 4266,
+          "vertices": 1909,
+          "components": 5,
+          "boundary_edges": 0,
+          "non_manifold_edges": 231,
+          "surface_area": 0.09480934300005035,
+          "extent": [
+            0.107,
+            0.089502,
+            0.08471
+          ]
+        }
+      }
+    }
+  },
+  "l_thigh.obj": {
+    "source_bytes": 3510361,
+    "result_bytes": 994935,
+    "triangles_before": 47249,
+    "triangles_after": 14171,
+    "materials": {
+      "合金2": {
+        "before": {
+          "triangles": 47249,
+          "vertices": 23395,
+          "components": 44,
+          "boundary_edges": 133,
+          "non_manifold_edges": 56,
+          "surface_area": 0.27005550567845454,
+          "extent": [
+            0.0931,
+            0.107622,
+            0.29165800000000003
+          ]
+        },
+        "after": {
+          "triangles": 14171,
+          "vertices": 6894,
+          "components": 49,
+          "boundary_edges": 17,
+          "non_manifold_edges": 160,
+          "surface_area": 0.2619895674402215,
+          "extent": [
+            0.09304799999999999,
+            0.1047205,
+            0.291478
+          ]
+        }
+      }
+    }
+  },
+  "r_thigh.obj": {
+    "source_bytes": 3642820,
+    "result_bytes": 1028554,
+    "triangles_before": 48948,
+    "triangles_after": 14684,
+    "materials": {
+      "合金2": {
+        "before": {
+          "triangles": 48948,
+          "vertices": 24253,
+          "components": 45,
+          "boundary_edges": 170,
+          "non_manifold_edges": 53,
+          "surface_area": 0.2734768932413402,
+          "extent": [
+            0.0931,
+            0.107621,
+            0.294285
+          ]
+        },
+        "after": {
+          "triangles": 14684,
+          "vertices": 7161,
+          "components": 49,
+          "boundary_edges": 20,
+          "non_manifold_edges": 134,
+          "surface_area": 0.26901664329616976,
+          "extent": [
+            0.093013,
+            0.10472,
+            0.294217
+          ]
+        }
+      }
+    }
+  },
+  "toe.obj": {
+    "source_bytes": 225630,
+    "result_bytes": 57359,
+    "triangles_before": 3000,
+    "triangles_after": 900,
+    "materials": {
+      "材质": {
+        "before": {
+          "triangles": 3000,
+          "vertices": 1486,
+          "components": 1,
+          "boundary_edges": 0,
+          "non_manifold_edges": 0,
+          "surface_area": 0.020765157703007627,
+          "extent": [
+            0.058999,
+            0.03861,
+            0.056534
+          ]
+        },
+        "after": {
+          "triangles": 900,
+          "vertices": 436,
+          "components": 1,
+          "boundary_edges": 0,
+          "non_manifold_edges": 0,
+          "surface_area": 0.019265197841836446,
+          "extent": [
+            0.05885,
+            0.038555,
+            0.056351
+          ]
+        }
+      }
+    }
+  },
+  "torso.obj": {
+    "source_bytes": 9666658,
+    "result_bytes": 2429933,
+    "triangles_before": 115369,
+    "triangles_after": 34283,
+    "materials": {
+      "材质.005": {
+        "before": {
+          "triangles": 23645,
+          "vertices": 11497,
+          "components": 46,
+          "boundary_edges": 187,
+          "non_manifold_edges": 554,
+          "surface_area": 0.21499618073974344,
+          "extent": [
+            0.362447,
+            0.179844,
+            0.132718
+          ]
+        },
+        "after": {
+          "triangles": 7052,
+          "vertices": 3412,
+          "components": 45,
+          "boundary_edges": 74,
+          "non_manifold_edges": 201,
+          "surface_area": 0.19612198263375416,
+          "extent": [
+            0.36237050000000004,
+            0.179019125,
+            0.132682
+          ]
+        }
+      },
+      "电池部分发亮的黑.010": {
+        "before": {
+          "triangles": 1550,
+          "vertices": 775,
+          "components": 5,
+          "boundary_edges": 24,
+          "non_manifold_edges": 0,
+          "surface_area": 0.029605631187051593,
+          "extent": [
+            0.292884,
+            0.160767,
+            0.104665
+          ]
+        },
+        "after": {
+          "triangles": 465,
+          "vertices": 226,
+          "components": 5,
+          "boundary_edges": 3,
+          "non_manifold_edges": 6,
+          "surface_area": 0.028838565689677256,
+          "extent": [
+            0.292884,
+            0.16067625000000002,
+            0.10457699999999999
+          ]
+        }
+      },
+      "铝合金.005": {
+        "before": {
+          "triangles": 8262,
+          "vertices": 3677,
+          "components": 5,
+          "boundary_edges": 0,
+          "non_manifold_edges": 5,
+          "surface_area": 0.22220231146612393,
+          "extent": [
+            0.320002,
+            0.16,
+            0.152743
+          ]
+        },
+        "after": {
+          "triangles": 2478,
+          "vertices": 925,
+          "components": 5,
+          "boundary_edges": 0,
+          "non_manifold_edges": 179,
+          "surface_area": 0.24731644852417506,
+          "extent": [
+            0.32,
+            0.16,
+            0.152743
+          ]
+        }
+      },
+      "合金2.005": {
+        "before": {
+          "triangles": 60291,
+          "vertices": 27721,
+          "components": 28,
+          "boundary_edges": 232,
+          "non_manifold_edges": 3563,
+          "surface_area": 0.4775163037287534,
+          "extent": [
+            0.573993,
+            0.20005,
+            0.158068
+          ]
+        },
+        "after": {
+          "triangles": 17796,
+          "vertices": 8067,
+          "components": 29,
+          "boundary_edges": 3,
+          "non_manifold_edges": 1060,
+          "surface_area": 0.4650060222717659,
+          "extent": [
+            0.573943,
+            0.199843,
+            0.158068
+          ]
+        }
+      },
+      "壳子.005": {
+        "before": {
+          "triangles": 13580,
+          "vertices": 6741,
+          "components": 6,
+          "boundary_edges": 135,
+          "non_manifold_edges": 4,
+          "surface_area": 0.6294132419967606,
+          "extent": [
+            0.25039900000000004,
+            0.160651,
+            0.14478000000000002
+          ]
+        },
+        "after": {
+          "triangles": 4073,
+          "vertices": 1974,
+          "components": 4,
+          "boundary_edges": 45,
+          "non_manifold_edges": 84,
+          "surface_area": 0.6468373281380112,
+          "extent": [
+            0.25039900000000004,
+            0.160648625,
+            0.14478000000000002
+          ]
+        }
+      },
+      "指示灯绿色.005": {
+        "before": {
+          "triangles": 37,
+          "vertices": 45,
+          "components": 4,
+          "boundary_edges": 45,
+          "non_manifold_edges": 0,
+          "surface_area": 1.2040651404842442e-05,
+          "extent": [
+            0.032,
+            9.999999999996123e-06,
+            0.002082999999999998
+          ]
+        },
+        "after": {
+          "triangles": 20,
+          "vertices": 28,
+          "components": 4,
+          "boundary_edges": 28,
+          "non_manifold_edges": 0,
+          "surface_area": 1.0326907363001814e-05,
+          "extent": [
+            0.031933500000000004,
+            9.999999999996123e-06,
+            0.002082999999999998
+          ]
+        }
+      },
+      "电池部分发亮的黑.011": {
+        "before": {
+          "triangles": 8004,
+          "vertices": 3805,
+          "components": 19,
+          "boundary_edges": 296,
+          "non_manifold_edges": 265,
+          "surface_area": 0.036507494856864775,
+          "extent": [
+            0.292884,
+            0.16098200000000001,
+            0.162812
+          ]
+        },
+        "after": {
+          "triangles": 2399,
+          "vertices": 1189,
+          "components": 13,
+          "boundary_edges": 47,
+          "non_manifold_edges": 92,
+          "surface_area": 0.0355421850463175,
+          "extent": [
+            0.292884,
+            0.16098200000000001,
+            0.162812
+          ]
+        }
+      }
+    }
+  },
+  "mid360.obj": {
+    "source_bytes": 1110991,
+    "result_bytes": 875599,
+    "triangles_before": 17732,
+    "triangles_after": 12412,
+    "materials": {
+      "mid360_body": {
+        "before": {
+          "triangles": 17732,
+          "vertices": 8866,
+          "components": 8,
+          "boundary_edges": 0,
+          "non_manifold_edges": 4,
+          "surface_area": 0.018472927193346547,
+          "extent": [
+            0.072693,
+            0.0600972,
+            0.064786
+          ]
+        },
+        "after": {
+          "triangles": 12412,
+          "vertices": 6206,
+          "components": 8,
+          "boundary_edges": 0,
+          "non_manifold_edges": 6,
+          "surface_area": 0.01925346429917472,
+          "extent": [
+            0.072693,
+            0.0600972,
+            0.064786
+          ]
+        }
+      }
+    }
+  }
+}

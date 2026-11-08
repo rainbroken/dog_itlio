@@ -1,0 +1,8 @@
+# 任务决策状态机（不是 BehaviorTree）；时间单位 s。
+# 安全仲裁的硬性门控仍在源码中，硬件许可保留在 execution.yaml。
+navigation_executor:
+  ros__parameters:
+    recovery_timeout: 20.0    # 连续输入缺失/恢复等待上限
+    progress_timeout: 30.0    # 无实测运动进展上限
+    retry_interval: 4.0       # 恢复请求间隔
+    max_retries: 3           # 每轮恢复最多重试次数；0 禁用重试

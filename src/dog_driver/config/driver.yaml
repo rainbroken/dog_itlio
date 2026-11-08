@@ -1,0 +1,30 @@
+dog_driver:
+  ros__parameters:
+    robot_ip: "10.21.20.1"
+    robot_state_port: 9873
+    tcp_local_port: 0
+    session_id: 0
+    state_upload_rate_hz: 100
+    poll_period_ms: 10
+    state_timeout_ms: 500
+    reconnect_period_ms: 1000
+    posture_control_enabled: true
+    velocity_control_enabled: true
+    motion_command_rate_hz: 50
+    safe_velocity_x: 1.00
+    safe_velocity_y: 0.30
+    safe_velocity_yaw: 1.00
+    velocity_timeout_ms: 200
+    publish_rate_hz: 50.0
+    status_rate_hz: 10.0
+    diagnostic_rate_hz: 1.0
+    odom_frame: "odom"
+    odom_topic: "/dog/odom"
+    base_footprint_frame: "base_footprint"
+    base_frame: "base_link"
+    imu_frame: "imu_link"
+    publish_odom_tf: false
+    odom_position_stddev: 0.05
+    odom_orientation_stddev: 0.05
+    odom_linear_velocity_stddev: 0.03
+    odom_angular_velocity_stddev: 0.05

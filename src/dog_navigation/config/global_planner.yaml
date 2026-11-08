@@ -1,0 +1,11 @@
+# 全局地形图搜索的实时障碍代价；节点名沿用 local_navigation。
+# 静态地形、坡度、台阶与 0.66 × 0.58 m 机身尺寸来自地图工程 config，
+# 修改静态参数必须重建并校验地图，不在这里覆盖。
+local_navigation:
+  ros__parameters:
+    # Hz：共用规划循环，包含实时障碍更新、全局路线校验/重搜索和局部路径截取。
+    # 不代表每周期都完整搜索，也不是独立的局部轨迹优化频率。
+    planning_rate: 5.0
+    processing_budget: 0.4       # s：超时则拒绝输出；不保证达到 planning_rate
+    avoidance_distance: 0.45
+    avoidance_weight: 8.0

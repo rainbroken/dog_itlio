@@ -1,0 +1,79 @@
+# 已有地图定位配置。由 bringup.yaml 的 localization_config 选择，修改后重启生效。
+# 长度单位 m、时间单位 s、角度单位 rad；保留 ROS 节点参数结构。
+map_localizer:
+  ros__parameters:
+    # —— 坐标系与输入 ——
+    map_frame: map
+    odom_frame: odom
+    base_frame: base_link
+    cloud_frame: livox_frame
+    cloud_topic: /lio/cloud_deskewed
+    # —— 更新频率与数据时效 ——
+    registration_rate: 2.0       # 配准频率上限，Hz
+    data_timeout: 1.5            # 输入或有效配准超时后停止刷新有效地图 TF
+    max_scan_age: 1.0            # 接受扫描时允许的最大时间戳年龄
+    max_result_age: 9.0          # 大于全局搜索预算；完成后仍检查扫描年龄
+    recovery_interval: 1.0       # 失锁后的附近恢复间隔
+
+    # —— 点云采样与资源上限 ——
+    voxel_size: 0.15             # 精配准采样分辨率
+    coarse_voxel_size: 0.35      # 粗配准采样分辨率
+    crop_radius: 15.0
+    crop_half_height: 4.0
+    scan_min_range: 0.4
+    scan_max_range: 20.0
+    min_points: 80
+    max_scan_points: 4000
+    max_map_points: 1000000
+    # —— ICP 配准与质量门控 ——
+    coarse_iterations: 25
+    fine_iterations: 35
+    coarse_correspondence: 1.5
+    fine_correspondence: 0.5
+    inlier_distance: 0.25
+    min_overlap: 0.55
+    min_reverse_overlap: 0.30
+    max_rmse: 0.15
+    min_geometry_ratio: 0.0005
+    # —— 跟踪与初值允许的修正范围 ——
+    max_tracking_translation: 0.5
+    max_tracking_rotation: 0.25
+    max_tracking_vertical: 0.25
+    max_initial_translation: 1.5
+    max_initial_rotation: 0.8
+    max_initial_vertical: 0.6
+    # —— 有初值的附近重定位 ——
+    recovery_xy_radius: 1.0
+    recovery_z_radius: 0.3
+    recovery_yaw_radius: 0.52
+    recovery_candidates: 4
+    ambiguity_margin: 0.015
+    # —— 连续确认与失锁恢复 ——
+    confirmations: 3             # 连续一致的成功配准达到此帧数才确认定位
+    failures_to_lost: 3
+    confirmation_translation: 0.15
+    confirmation_rotation: 0.10
+    automatic_recovery: true
+    # —— 历史关键帧全局重定位；旧地图无关键帧时使用水平面枚举 ——
+    global_relocalization:
+      enabled: true              # 加载地图后自动搜索，无需手工点选初值
+      keyframe_candidates: 128   # 旋转不变径向/高度占据描述子保留的位置数
+      min_overlap: 0.80          # 全局搜索要求比已有初值跟踪更高的正向重叠率
+      on_startup: true           # 总开关开启后，无初值时自动搜索
+      on_lost: true              # 总开关开启后，附近恢复失败再搜索
+      retry_interval: 3.0        # 全局搜索失败后的重试间隔
+      failures_before_global: 3
+      xy_step: 1.0
+      height_step: 0.5
+      body_height: 0.65          # 名义机身离地高度，按实际站姿校准
+      yaw_steps: 24
+      max_hypotheses: 30000
+      scoring_points: 128
+      refine_candidates: 12
+      # 超时拒绝定位；较慢平台可增大，但须同时令 max_result_age 大于预算。
+      # 合成房间测试使用 5/6 秒；历史实图回放需要更大预算，按目标硬件验证。
+      time_budget: 8.0
+    # —— 可选人工初值 ——
+    # 地图中的 base_link 位姿 [x,y,z,roll,pitch,yaw]；角度为 rad。
+    # z 是机身高度，不能直接填脚下地面高度；网页或 /initialpose 可重新设置。
+    # initial_pose: [0.0, 0.0, 0.65, 0.0, 0.0, 0.0]
